@@ -215,7 +215,7 @@ func tryExclusivePath(path string) error {
 // the running executable. Users must manually replace the binary.
 func Update() (*UpdateResult, error) {
 	// Fetch latest release
-	release, err := FetchLatestRelease("ArcKelMiranda", "yhat-knowledge")
+	release, err := FetchLatestRelease("ArcKelMiranda", "yhat-agent")
 	if err != nil {
 		return nil, fmt.Errorf("fetching release: %w", err)
 	}
