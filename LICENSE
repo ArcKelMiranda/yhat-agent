@@ -1,0 +1,192 @@
+# PROPRIETARY COMMERCIAL LICENSE
+
+**Software:** yhat-agent  
+**Licensor:** ArcKelMiranda
+
+---
+
+## IMPORTANT — READ CAREFULLY BEFORE USING THIS SOFTWARE
+
+This repository contains proprietary commercial software source code and associated assets
+(the "Software"). Access to, viewing of, or interaction with the source code or any
+derivative thereof does not constitute, imply, or grant any license, right, or permission
+to use, copy, modify, distribute, sublicense, sell, transfer, or otherwise exploit the
+Software in any manner.
+
+Any and all rights to use, install, integrate, modify, or otherwise exploit the Software
+— in whole or in part — are expressly withheld unless and until ArcKelMiranda has executed
+a separate written commercial agreement or order form with you (or the entity you represent),
+and any applicable fees have been paid and are current.
+
+---
+
+## 1. GRANT OF RIGHTS
+
+Subject to the terms and conditions of a separately executed commercial agreement or order
+form ("Commercial Agreement"), ArcKelMiranda grants you the following limited, revocable,
+non-exclusive, non-sublicensable rights:
+
+### 1.1 Installation and Use
+You may install and use the Software in your own environment strictly in accordance with
+the scope authorized in the Commercial Agreement.
+
+### 1.2 Internal Source Modification
+You may modify the Software's source code solely for your own internal use, provided that:
+- Modifications are used only within your organization and for internal purposes;
+- Modified source code is not published, disclosed, sublicensed, sold, transferred,
+  or redistributed to any third party.
+
+### 1.3 Integration
+You may integrate the Software — or portions thereof — into your own products or services
+("Your Products") only to the extent expressly authorized by the Commercial Agreement and
+strictly within its defined scope.
+
+---
+
+## 2. RESTRICTIONS
+
+The following activities are prohibited unless ArcKelMiranda provides explicit prior
+written authorization:
+
+- Publishing, disclosing, sublicensing, selling, transferring, or redistributing the
+  source code of the Software, in original or modified form, to any third party;
+- Removing, altering, or obscuring any proprietary notice, copyright notice, or
+  confidentiality legend contained in or on the Software;
+- Reverse engineering, decompiling, disassembling, or attempting to derive the source
+  code or underlying ideas or algorithms of the Software, except and only to the extent
+  that applicable law expressly permits such activity notwithstanding this prohibition;
+- Using the Software in any manner that exceeds the scope authorized by the Commercial
+  Agreement, including but not limited to exceeding permitted deployment counts, user
+  counts, entity counts, or usage volumes;
+- Using the Software to provide services to third parties unless expressly permitted
+  under the Commercial Agreement.
+
+---
+
+## 3. OWNERSHIP AND INTELLECTUAL PROPERTY
+
+The Software, including all source code, documentation, structure, organization,
+design, algorithms, trade secrets, know-how, and all intellectual property rights
+therein, is and shall remain the sole and exclusive property of ArcKelMiranda.
+
+This License does not transfer any ownership, title, or interest in or to the Software
+or any intellectual property rights to you. No rights are granted hereunder other than
+those expressly stated.
+
+---
+
+## 4. CONFIDENTIALITY
+
+The Software contains trade secrets and proprietary information of ArcKelMiranda. This
+License does not waive any trade secret rights, and publicly visible source code does
+not forfeit trade secret protection for underlying ideas, algorithms, or know-how that
+are not themselves disclosed. You agree to:
+- Maintain the confidentiality of any portion of the Software or related materials that
+  ArcKelMiranda has designated as confidential, and of any non-public information
+  disclosed to you under the Commercial Agreement, using at least the same degree of
+  care you use to protect your own most sensitive confidential information, but no less
+  than reasonable care;
+- Not disclose any designated confidential materials to any third party without
+  ArcKelMiranda's prior written consent;
+- Limit access to designated confidential materials to personnel who have a need to
+  know and who are bound by confidentiality obligations no less protective than those
+  contained herein.
+
+---
+
+## 5. COMMERCIAL AGREEMENT GOVERNANCE
+
+The following terms are governed exclusively by the separately executed Commercial Agreement
+between you and ArcKelMiranda, which controls over any inconsistent provision of this
+license text:
+
+- **Term and duration** of the authorized use;
+- **Fees, pricing, and payment terms**;
+- **Deployment scope**, including permitted installations, users, entities, or instances;
+- **Support levels, maintenance obligations, and service commitments**;
+- **Warranties** provided by ArcKelMiranda;
+- **Limitation of liability** and liability caps;
+- **Governing law**, jurisdiction, and dispute resolution procedures;
+- **Termination** rights, effects, and obligations upon or following termination;
+- **Third-party components** included in or distributed with the Software and their
+  applicable license terms;
+- Any additional terms, conditions, representations, or warranties not expressly
+  addressed in this license.
+
+In the absence of a Commercial Agreement, no warranty, support, maintenance, or
+liability term of any kind applies.
+
+---
+
+## 6. AGREEMENT PRECEDENCE
+
+In the event of any conflict, ambiguity, or inconsistency between this license file and
+the Commercial Agreement, the terms of the Commercial Agreement shall control and prevail.
+This license file is a baseline framework only and does not supersede, modify, or replace
+any term of the separately executed Commercial Agreement.
+
+---
+
+## 7. TERMINATION
+
+This License and all rights granted herein are effective only while a valid Commercial
+Agreement is in full force and effect. Upon expiration, termination, or breach of the
+Commercial Agreement — for any reason — all rights granted under this License cease
+immediately. You must, at ArcKelMiranda's written direction, destroy or return all
+copies of the Software (including modified source code) in your possession or control.
+
+---
+
+## 8. DISCLAIMER AND LIMITATION OF LIABILITY
+
+**DISCLAIMER:** THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, ARCKELMIRANDA SHALL NOT BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR FOR
+ANY LOSS OF PROFITS, REVENUE, DATA, OR GOODWILL, ARISING OUT OF OR IN CONNECTION WITH
+THE SOFTWARE OR THIS LICENSE, HOWEVER CAUSED AND UNDER WHATEVER THEORY OF LIABILITY,
+EVEN IF ARCKELMIRANDA HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+THE EXTENT AND LIMITS OF ARCKELMIRANDA'S LIABILITY AND YOUR REMEDIES ARE GOVERNED BY
+AND SUBJECT TO THE TERMS OF THE APPLICABLE COMMERCIAL AGREEMENT.
+
+---
+
+## 9. THIRD-PARTY COMPONENTS
+
+The Software may include or be distributed with third-party software components, each
+subject to their own applicable open-source or proprietary license terms. The applicable
+license terms for each third-party component are identified in the corresponding
+documentation or notices distributed with the Software. Your use of third-party
+components is subject to those respective license terms. Nothing in this License
+modifies or restricts the rights of third-party licensors with respect to their
+respective components.
+
+---
+
+## 10. GENERAL
+
+This License, together with the separately executed Commercial Agreement, constitutes
+the entire agreement between the parties with respect to the subject matter hereof.
+In the event of any conflict or inconsistency between this License and the Commercial
+Agreement, the terms of the Commercial Agreement shall control and prevail. If any
+provision of this License is held to be invalid or unenforceable, the remaining
+provisions shall continue in full force and effect.
+
+---
+
+## 11. CONTACT AND AUTHORIZATION
+
+To obtain a Commercial Agreement or to seek written authorization for any use not
+expressly permitted under this License, contact ArcKelMiranda through the repository
+owner's official GitHub communication channels.
+
+---
+
+> **Legal Notice:** This license text is a practical template drafted for repository
+> purposes and does not constitute qualified legal advice. The terms of the Commercial
+> Agreement executed between you and ArcKelMiranda govern your actual rights and
+> obligations. Consult a qualified attorney licensed in your jurisdiction before
+> entering into any commercial licensing arrangement or relying on this template.

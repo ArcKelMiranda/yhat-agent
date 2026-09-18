@@ -96,4 +96,23 @@ yhat-agent/
 
 ## License
 
-MIT
+**Proprietary Commercial Software — All Rights Reserved**
+
+The Software and its source code in this repository are proprietary and confidential
+trade secret property of **ArcKelMiranda**. This is not open-source or free software.
+Source code may be publicly visible in this repository; such visibility does not waive
+or forfeit ArcKelMiranda's trade secret rights or proprietary interests in the Software.
+
+**No rights are granted by repository access.**
+
+Any right to install, use, modify, integrate, or otherwise exploit this software
+— in whole or in part — requires a separately executed commercial agreement or
+order form with ArcKelMiranda, and any applicable fees must be paid and kept current.
+
+Unauthorized use, copying, redistribution, or sublicensing of the source code is
+strictly prohibited and may constitute a violation of applicable law.
+
+To obtain authorized access or a commercial agreement, contact ArcKelMiranda through
+the repository owner's official GitHub communication channels.
+
+For the full license terms, see the [LICENSE](LICENSE) file.
