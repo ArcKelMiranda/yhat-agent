@@ -1,2 +1,4 @@
 yhat-agent_yhat-agent_*
 *.exe
+# Local Pi runtime state
+.atl/
