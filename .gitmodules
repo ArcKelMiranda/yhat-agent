@@ -1,0 +1,3 @@
+[submodule "tools/archify"]
+	path = tools/archify
+	url = https://github.com/tt-a1i/archify.git

@@ -1,0 +1,371 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "yhat-agent",
+    "subtitle": "Go CLI managing YHat OpenCode agent and skill assets via embedded resources, manifest tracking, and GitHub Releases direct downloads.",
+    "output": "yhat-agent.architecture.html",
+    "quality_profile": "standard"
+  },
+  "components": [
+    {
+      "id": "cli",
+      "type": "frontend",
+      "label": "CLI Entry Point",
+      "sublabel": "cmd/yhat-agent/main.go",
+      "pos": [
+        500,
+        60
+      ],
+      "size": [
+        220,
+        70
+      ],
+      "tag": "install \u00b7 status \u00b7 update \u00b7 uninstall \u00b7 version"
+    },
+    {
+      "id": "install_cmd",
+      "type": "frontend",
+      "label": "Install",
+      "sublabel": "install.go",
+      "pos": [
+        100,
+        200
+      ],
+      "size": [
+        130,
+        60
+      ],
+      "tag": "WriteExclusiveAtomically"
+    },
+    {
+      "id": "status_cmd",
+      "type": "frontend",
+      "label": "Status",
+      "sublabel": "status.go",
+      "pos": [
+        240,
+        200
+      ],
+      "size": [
+        130,
+        60
+      ]
+    },
+    {
+      "id": "update_cmd",
+      "type": "frontend",
+      "label": "Update",
+      "sublabel": "update.go",
+      "pos": [
+        380,
+        200
+      ],
+      "size": [
+        130,
+        60
+      ],
+      "tag": "no API token"
+    },
+    {
+      "id": "uninstall_cmd",
+      "type": "frontend",
+      "label": "Uninstall",
+      "sublabel": "uninstall.go",
+      "pos": [
+        520,
+        200
+      ],
+      "size": [
+        130,
+        60
+      ],
+      "tag": "--yes required"
+    },
+    {
+      "id": "version_cmd",
+      "type": "frontend",
+      "label": "Version",
+      "sublabel": "cmd/yhat-agent/main.go \u2014 runVersion()",
+      "pos": [
+        660,
+        200
+      ],
+      "size": [
+        180,
+        60
+      ],
+      "tag": "ldflags"
+    },
+    {
+      "id": "embedded_assets",
+      "type": "backend",
+      "label": "Embedded Assets",
+      "sublabel": "embed.go \u2014 embed.FS",
+      "pos": [
+        100,
+        360
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "tag": "compiled into binary"
+    },
+    {
+      "id": "manifest",
+      "type": "database",
+      "label": "Manifest",
+      "sublabel": "manifest.go",
+      "pos": [
+        300,
+        360
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "tag": "~/.config/yhat-agent/"
+    },
+    {
+      "id": "xdg_config",
+      "type": "database",
+      "label": "OpenCode Config",
+      "sublabel": "paths.go",
+      "pos": [
+        500,
+        360
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "tag": "$XDG_CONFIG_HOME/opencode"
+    },
+    {
+      "id": "github_releases",
+      "type": "cloud",
+      "label": "GitHub Releases",
+      "sublabel": "releases/latest/download/",
+      "pos": [
+        700,
+        360
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "tag": "SHA-256 verified"
+    },
+    {
+      "id": "opencode",
+      "type": "external",
+      "label": "OpenCode Runtime",
+      "sublabel": "opencode config directory",
+      "pos": [
+        500,
+        500
+      ],
+      "size": [
+        160,
+        60
+      ]
+    },
+    {
+      "id": "candidate_file",
+      "type": "database",
+      "label": "Side-by-side Candidate",
+      "sublabel": "paths.go \u2014 CandidateName()",
+      "pos": [
+        700,
+        450
+      ],
+      "size": [
+        160,
+        60
+      ],
+      "tag": ".yhat-agent-new suffix"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "yhat-agent binary",
+      "wraps": [
+        "cli",
+        "install_cmd",
+        "status_cmd",
+        "update_cmd",
+        "uninstall_cmd",
+        "version_cmd",
+        "embedded_assets",
+        "manifest"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "External",
+      "wraps": [
+        "github_releases",
+        "xdg_config",
+        "opencode",
+        "candidate_file"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "c1",
+      "from": "cli",
+      "to": "install_cmd",
+      "label": "install",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": -8
+    },
+    {
+      "id": "c2",
+      "from": "cli",
+      "to": "status_cmd",
+      "label": "status",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": -8
+    },
+    {
+      "id": "c3",
+      "from": "cli",
+      "to": "update_cmd",
+      "label": "update",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": -8
+    },
+    {
+      "id": "c4",
+      "from": "cli",
+      "to": "uninstall_cmd",
+      "label": "uninstall",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": -8
+    },
+    {
+      "id": "c5",
+      "from": "cli",
+      "to": "version_cmd",
+      "label": "version",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": -8
+    },
+    {
+      "id": "c6",
+      "from": "install_cmd",
+      "to": "embedded_assets",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": -8,
+      "variant": "dashed"
+    },
+    {
+      "id": "c7",
+      "from": "install_cmd",
+      "to": "manifest",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": -8,
+      "labelDx": 8
+    },
+    {
+      "id": "c8",
+      "from": "install_cmd",
+      "to": "xdg_config",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": -8,
+      "labelDx": 16
+    },
+    {
+      "id": "c9",
+      "from": "status_cmd",
+      "to": "manifest",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": -8,
+      "labelDx": -8
+    },
+    {
+      "id": "c10",
+      "from": "status_cmd",
+      "to": "xdg_config",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": -8
+    },
+    {
+      "id": "c11",
+      "from": "update_cmd",
+      "to": "github_releases",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": -8,
+      "labelDx": 8
+    },
+    {
+      "id": "c12",
+      "from": "uninstall_cmd",
+      "to": "manifest",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": -8,
+      "labelDx": -16
+    },
+    {
+      "id": "c13",
+      "from": "uninstall_cmd",
+      "to": "xdg_config",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": -8,
+      "labelDx": -8
+    },
+    {
+      "id": "c14",
+      "from": "xdg_config",
+      "to": "opencode",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": -8
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Install",
+      "items": [
+        "Reads embedded assets from Go embed.FS",
+        "Writes files exclusively using WriteExclusiveAtomically (O_CREATE|O_EXCL, single syscall, no TOCTOU window)",
+        "Records SHA-256 hashes in manifest"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Drift handling",
+      "items": [
+        "Status compares installed file hash against manifest content_hash",
+        "Uninstall refuses to remove files flagged as modified"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Update",
+      "items": [
+        "Downloads from GitHub releases/latest/download/ (no API token)",
+        "Verifies SHA-256 checksum before writing local side-by-side <name>.yhat-agent-new",
+        "User applies the candidate manually by renaming it over the running binary",
+        "Status command detects candidates by .yhat-agent-new suffix in standard dirs"
+      ]
+    }
+  ]
+}

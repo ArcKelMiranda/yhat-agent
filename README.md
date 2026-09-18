@@ -94,6 +94,30 @@ yhat-agent/
 └── go.sum                   # Go module checksums
 ```
 
+## Architecture Documentation
+
+The system architecture is documented as a self-contained rendered diagram and a
+machine-readable source.
+
+| Artifact | Description |
+|---|---|
+| [`docs/architecture/yhat-agent.architecture.json`](docs/architecture/yhat-agent.architecture.json) | Archify architecture source (evidence-backed) |
+| [`docs/architecture/yhat-agent.architecture.html`](docs/architecture/yhat-agent.architecture.html) | Rendered standalone HTML |
+| [`docs/architecture/generate.mjs`](docs/architecture/generate.mjs) | Deterministic generation script |
+| [`docs/architecture/NOTICE.md`](docs/architecture/NOTICE.md) | Upstream licenses and provenance |
+
+**Regenerate the HTML:**
+
+```bash
+node docs/architecture/generate.mjs
+```
+
+**Initialize the Archify submodule** (required before first generation):
+
+```bash
+git submodule update --init tools/archify
+```
+
 ## License
 
 **Proprietary Commercial Software — All Rights Reserved**
