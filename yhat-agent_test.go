@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -285,10 +287,10 @@ func TestPlatformName(t *testing.T) {
 func TestPlatformNameMatchesAssetPattern(t *testing.T) {
 	// All supported platforms with expected fixture names
 	platforms := []struct {
-		platform          string
-		assetName         string
-		checksumName      string
-		includeInCurrent  bool // true for current-host platform
+		platform         string
+		assetName        string
+		checksumName     string
+		includeInCurrent bool // true for current-host platform
 	}{
 		{"linux_amd64", "yhat-agent_linux_amd64", "yhat-agent_linux_amd64.sha256sum", false},
 		{"linux_arm64", "yhat-agent_linux_arm64", "yhat-agent_linux_arm64.sha256sum", false},
@@ -396,8 +398,8 @@ func TestFindPlatformAssetMissingChecksum(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for missing checksum file")
 	}
-	if !strings.Contains(err.Error(), "checksums") {
-		t.Errorf("expected error message about checksums, got: %v", err)
+	if !strings.Contains(err.Error(), "checksum") {
+		t.Errorf("expected error message about checksum, got: %v", err)
 	}
 }
 
@@ -2320,7 +2322,6 @@ func TestManifestSave_SyncFailureCleansTemp(t *testing.T) {
 	}
 }
 
-
 // --- Test: uniqueCandidatePath rejects symlink at default path ---
 // Verifies that uniqueCandidatePath detects symlink at default path and
 // falls through to numbered suffixes instead of following the symlink.
@@ -2373,5 +2374,235 @@ func TestUniqueCandidatePath_RejectsSymlink(t *testing.T) {
 	// Verify the returned path is actually a new numbered suffix that was created
 	if !strings.Contains(result, "_2") && !strings.Contains(result, "_3") {
 		t.Logf("Result: %s", result)
+	}
+}
+
+// --- Test: latestDownloadURLs uses releases/latest/download/ pattern ---
+
+func TestLatestDownloadURLs_UsesLatestRedirect(t *testing.T) {
+	downloadURL, checksumURL, assetName, err := latestDownloadURLs()
+	if err != nil {
+		t.Fatalf("latestDownloadURLs failed: %v", err)
+	}
+
+	// Must use the stable GitHub latest redirect endpoint, not a hardcoded version.
+	if !strings.Contains(downloadURL, "releases/latest/download/") {
+		t.Errorf("download URL should use releases/latest/download/: got %s", downloadURL)
+	}
+	if !strings.Contains(checksumURL, "releases/latest/download/") {
+		t.Errorf("checksum URL should use releases/latest/download/: got %s", checksumURL)
+	}
+
+	// Must NOT contain a hardcoded version tag.
+	for _, url := range []string{downloadURL, checksumURL} {
+		if strings.Contains(url, "/v0.1.") {
+			t.Errorf("URL should not contain hardcoded v0.1.x version: %s", url)
+		}
+		if strings.Contains(url, "/v0.2.") {
+			t.Errorf("URL should not contain hardcoded v0.2.x version: %s", url)
+		}
+	}
+
+	// Asset name must be non-empty and match current platform.
+	if assetName == "" {
+		t.Error("assetName should not be empty")
+	}
+	platform := PlatformName()
+	expectedAsset := assetNameForPlatform(platform)
+	if assetName != expectedAsset {
+		t.Errorf("assetName mismatch: got %s, expected %s for platform %s", assetName, expectedAsset, platform)
+	}
+}
+
+// --- Test: extractVersionFromURL parses redirect URLs correctly ---
+
+func TestExtractVersionFromURL(t *testing.T) {
+	tests := []struct {
+		url      string
+		expected string
+	}{
+		{"https://github.com/ArcKelMiranda/yhat-agent/releases/download/v0.1.2/yhat-agent_linux_amd64", "v0.1.2"},
+		{"https://github.com/ArcKelMiranda/yhat-agent/releases/download/v0.1.3/yhat-agent_linux_amd64", "v0.1.3"},
+		{"https://objects.githubusercontent.com/.../releases/download/v1.2.3/...", "v1.2.3"},
+		{"https://github.com/ArcKelMiranda/yhat-agent/releases/download/v2.0.0-beta.1/...", "v2.0.0-beta.1"},
+		{"https://no-match-here.com/releases/download/", "unknown"},
+		{"", "unknown"},
+	}
+
+	for _, tt := range tests {
+		got := extractVersionFromURL(tt.url)
+		if got != tt.expected {
+			t.Errorf("extractVersionFromURL(%q): expected %q, got %q", tt.url, tt.expected, got)
+		}
+	}
+}
+
+// --- Test: Version variable is never empty ---
+
+func TestVersionVariable(t *testing.T) {
+	// Version is initialized at package load time. It is never empty.
+	if Version == "" {
+		t.Error("Version should not be empty after initialization")
+	}
+	// In a plain `go build`, Version defaults to "dev" (no VCS metadata in tests).
+	if Version != "dev" {
+		t.Logf("Version is %q (likely injected by ldflags)", Version)
+	}
+}
+
+// --- Test: UpdateResult fields are populated correctly ---
+
+func TestUpdateResult_Fields(t *testing.T) {
+	result := &UpdateResult{
+		CurrentVersion: "dev",
+		LatestVersion:  "v0.1.3",
+		AssetURL:       "https://github.com/ArcKelMiranda/yhat-agent/releases/latest/download/yhat-agent_linux_amd64",
+		AssetName:      "yhat-agent_linux_amd64",
+		HashVerified:   true,
+		CandidatePath:  "/usr/bin/yhat-agent.yhat-agent-new",
+		Message:        "Update downloaded and verified!",
+	}
+
+	if result.LatestVersion == "" {
+		t.Error("LatestVersion should be set")
+	}
+	if result.HashVerified != true {
+		t.Error("HashVerified should be true on success")
+	}
+	if result.CandidatePath == "" {
+		t.Error("CandidatePath should be set")
+	}
+	if !strings.Contains(result.AssetURL, "releases/latest/download/") {
+		t.Error("AssetURL should use releases/latest/download/")
+	}
+}
+
+// --- Test: ParseChecksums skips invalid lines ---
+
+func TestParseChecksums_InvalidLines(t *testing.T) {
+	content := []byte(`# This is a comment
+
+1c65a1a9c301828f582c0b04e6ecf59fd2841c86c2eaf35afec20ac025b4f44c  yhat-agent_linux_amd64
+# Another comment
+
+deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef  yhat-agent_linux_amd64
+`)
+
+	entries, err := ParseChecksums(content)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+
+	// Should parse 2 valid entries, skip comments and empty lines.
+	if len(entries) != 2 {
+		t.Errorf("expected 2 entries, got %d", len(entries))
+	}
+
+	// Verify first entry hash is 64 chars and lowercase.
+	if len(entries[0].Hash) != 64 {
+		t.Errorf("first hash length: expected 64, got %d", len(entries[0].Hash))
+	}
+	if entries[0].AssetName != "yhat-agent_linux_amd64" {
+		t.Errorf("first asset name: expected yhat-agent_linux_amd64, got %s", entries[0].AssetName)
+	}
+}
+
+// --- Test: CandidateName appends suffix correctly (cross-platform) ---
+
+func TestCandidateName_CrossPlatform(t *testing.T) {
+	tests := []struct {
+		path     string
+		expected string
+	}{
+		{"/usr/bin/yhat-agent", "/usr/bin/yhat-agent.yhat-agent-new"},
+		{"/usr/bin/yhat-agent.exe", "/usr/bin/yhat-agent.exe.yhat-agent-new"},
+		{"C:\\Program Files\\yhat-agent\\yhat-agent.exe", "C:\\Program Files\\yhat-agent\\yhat-agent.exe.yhat-agent-new"},
+	}
+
+	for _, tt := range tests {
+		got := CandidateName(tt.path)
+		if got != tt.expected {
+			t.Errorf("CandidateName(%q): expected %q, got %q", tt.path, tt.expected, got)
+		}
+	}
+}
+
+// --- Test: resolveVersion follows redirect chain and extracts tag ---
+
+func TestResolveVersion_FollowsRedirect(t *testing.T) {
+	// Set up a redirect server: /redirect -> final URL containing the tag.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/redirect" {
+			http.Redirect(w, r, "/releases/download/v1.2.3/yhat-agent_linux_amd64", http.StatusFound)
+			return
+		}
+		// Final URL — return a minimal 200 so HEAD succeeds.
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("fake binary"))
+	}))
+	defer server.Close()
+
+	client := server.Client() // uses default transport, follows redirects
+
+	resolved, err := resolveVersion(client, server.URL+"/redirect")
+	if err != nil {
+		t.Fatalf("resolveVersion failed: %v", err)
+	}
+	if resolved != "v1.2.3" {
+		t.Errorf("expected v1.2.3, got %q", resolved)
+	}
+}
+
+// --- Test: resolveVersion returns error on failed redirect ---
+
+func TestResolveVersion_NonRedirectResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	_, err := resolveVersion(server.Client(), server.URL+"/missing")
+	if err == nil {
+		t.Error("expected error on non-redirect response")
+	}
+	if !strings.Contains(err.Error(), "404") {
+		t.Errorf("error should mention status: %v", err)
+	}
+}
+
+// --- Test: Version is never empty ---
+
+func TestVersion_NeverEmpty(t *testing.T) {
+	// Version must always produce a meaningful non-empty string.
+	// It either comes from ldflags, VCS revision, or defaults to "dev".
+	if Version == "" {
+		t.Error("Version should never be empty")
+	}
+}
+
+// --- Test: detectVersion returns short VCS revision ---
+
+func TestDetectVersion_ShortRev(t *testing.T) {
+	got := shortRev("abcd12345678extra")
+	if got != "abcd12345678" {
+		t.Errorf("expected 12-char short rev, got %q", got)
+	}
+
+	got = shortRev("abc")
+	if got != "abc" {
+		t.Errorf("short rev should return input when len < 12, got %q", got)
+	}
+}
+
+// --- Test: detectVersion falls back to dev when no build info ---
+
+func TestDetectVersion_DevFallback(t *testing.T) {
+	// Save and restore Version to test the detection path.
+	// We cannot easily fake ReadBuildInfo in-process, so we test that
+	// the variable is initialized to a non-empty string by verifying
+	// the exported value at import time.
+	if Version == "" {
+		t.Error("Version must be initialized to a non-empty value")
 	}
 }

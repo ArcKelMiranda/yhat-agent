@@ -26,6 +26,8 @@ func main() {
 		runUpdate()
 	case "uninstall":
 		runUninstall()
+	case "version", "--version", "-v":
+		runVersion()
 	case "help", "--help", "-h":
 		printUsage()
 	default:
@@ -46,6 +48,7 @@ Commands:
   status     Report installation state without making changes
   update     Download and verify latest release from GitHub
   uninstall  Remove managed files (requires --yes)
+  version    Show version and build information
   help       Show this help message
 
 Options:
@@ -142,6 +145,16 @@ func runUpdate() {
 	fmt.Printf("  Hash verified:  %s\n", boolStr(result.HashVerified))
 
 	fmt.Printf("\n%s\n", result.Message)
+}
+
+func runVersion() {
+	v := yhatagent.Version
+	info := yhatagent.BuildInfo
+	fmt.Printf("yhat-agent %s", v)
+	if info != "" {
+		fmt.Printf(" (%s)", info)
+	}
+	fmt.Println()
 }
 
 func runUninstall() {

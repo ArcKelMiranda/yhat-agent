@@ -1,4 +1,10 @@
-yhat-agent_yhat-agent_*
-*.exe
+# Generated release binaries (never commit built artifacts)
+yhat-agent_linux_*
+yhat-agent_darwin_*
+yhat-agent_windows_*
+
+# Platform-specific candidate suffixes used by update command
+*.yhat-agent-new
+
 # Local Pi runtime state
 .atl/

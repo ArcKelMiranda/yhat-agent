@@ -2,32 +2,43 @@
 
 Installable Go CLI for the YHat knowledge capture agent and skill.
 
-## What it does
-
-`yhat-agent` is a self-contained binary that installs the YHat OpenCode agent and skill assets into your local OpenCode configuration directory. It tracks only its own files and can safely update from GitHub Releases.
-
-YHat captures durable operational knowledge (business rules, decisions, patterns) during AI coding sessions and saves it to **Engram** with a structured topic pattern for easy filtering.
-
 ## Installation
 
 ```bash
+# Install or update via go install (uses the latest released version)
 go install github.com/ArcKelMiranda/yhat-agent/cmd/yhat-agent@latest
-```
 
-Or download pre-built binaries from the [Releases page](https://github.com/ArcKelMiranda/yhat-agent/releases).
+# Or download a pre-built binary from the Releases page
+# https://github.com/ArcKelMiranda/yhat-agent/releases
+```
 
 ## Usage
 
 ```bash
 yhat-agent install   # Install embedded agent and skill assets
-yhat-agent status    # Report installation state without making changes
-yhat-agent update    # Download and verify latest release from GitHub
+yhat-agent status   # Report installation state without making changes
+yhat-agent update   # Download and verify latest release from GitHub
+yhat-agent version  # Show version and build information
 yhat-agent uninstall --yes   # Remove managed files (requires confirmation)
 ```
 
-## YHat Knowledge Capture
+### Update behavior
 
-When the YHat agent is selected for a session, it identifies durable knowledge from conversation and saves it to Engram.
+`yhat-agent update` downloads binaries directly from GitHub Releases using the stable
+`releases/latest/download/` redirect endpoint. No GitHub API token or rate-limited
+endpoint is used. Each download is verified against its SHA-256 checksum before a
+candidate binary is written alongside the running executable. The running executable
+is never overwritten; users apply the update by replacing it manually after review.
+
+## What it does
+
+`yhat-agent` is a self-contained binary that installs the YHat OpenCode agent and skill
+assets into your local OpenCode configuration directory. It tracks only its own files
+and can safely update from GitHub Releases.
+
+YHat captures durable operational knowledge (business rules, decisions, patterns) during
+AI coding sessions and saves it to **Engram** with a structured topic pattern for easy
+filtering.
 
 ### Topic Pattern
 
@@ -79,7 +90,8 @@ yhat-agent/
 │       └── yhat-memory-capture/
 │           └── SKILL.md
 ├── *.go                     # Core logic: install, status, update, uninstall
-└── *_test.go                # Test suite
+├── *_test.go                # Test suite
+└── go.sum                   # Go module checksums
 ```
 
 ## License
