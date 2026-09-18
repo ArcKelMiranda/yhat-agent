@@ -40,17 +40,18 @@ var Version = detectVersion()
 var BuildInfo = detectBuildInfo()
 
 // detectVersion returns a meaningful version string.
-// Priority: (1) ldflags-injected injectedVersion, (2) VCS revision from
-// ReadBuildInfo, (3) "dev". The module version is intentionally not
-// used because `go install @latest` produces a binary with no module metadata.
+// Priority: (1) ldflags-injected version, (2) Go module version from
+// `go install ...@version`, (3) VCS revision, (4) "dev".
 func detectVersion() string {
-	// If ldflags injected a version, use it.
 	if injectedVersion != "" {
 		return injectedVersion
 	}
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
 		return "dev"
+	}
+	if bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		return bi.Main.Version
 	}
 	for _, s := range bi.Settings {
 		if s.Key == "vcs.revision" {
