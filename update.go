@@ -55,6 +55,7 @@ func FetchLatestRelease(owner, repo string) (*ReleaseMetadata, error) {
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("User-Agent", "yhat-agent")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
