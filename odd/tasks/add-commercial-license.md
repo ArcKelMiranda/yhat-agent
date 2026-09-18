@@ -12,10 +12,11 @@
 - [x] Replace the README's MIT reference with the commercial licensing summary and contact requirement.
 - [x] Verify consistency: run `grep` for MIT strings and licensor typos, `git diff --check`, and independent term-by-term review.
 - [x] Work-unit commit the documentation change (NOT pushed, NOT merged).
-- [ ] Merge into main (user decision, not this agent's action).
+- [x] Merge into main after explicit user approval.
 
 ## Evidence
 - Work-unit commit: `5c8d575` (`docs: add proprietary commercial license`).
+- Fast-forward merged and pushed to `main` at `64adec1` after explicit user approval.
 - `LICENSE` created: proprietary commercial license covering all confirmed terms, ownership, trade-secret-scoped confidentiality (not blanket source-line confidentiality), reverse-engineering restrictions, dual-governing-document agreement-precedence clause, third-party component treatment, termination effects, and disclaimer/LL subject to Commercial Agreement.
 - README `License` section replaced: no longer claims MIT; summary directs prospective users to obtain written commercial authorization via GitHub communication channels; proprietary/all-rights-reserved status retained; no blanket confidential property claim; full terms deferred to LICENSE.
 - ODD task updated: drafting and README work marked complete; verification and commit deferred.
