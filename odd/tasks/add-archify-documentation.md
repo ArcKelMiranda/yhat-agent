@@ -36,8 +36,9 @@ The `update_cmd → candidate_file` connection was attempted with multiple ortho
   - **Evidence:** `README.md` — new "Architecture Documentation" section with table linking JSON source, rendered HTML, generation script, NOTICE, initialization command, and regeneration command
 
 - [x] Commit the work unit; merge/push only after explicit user approval.
-  - **Evidence:** Work-unit commit `218e599` (`docs: add Archify architecture infrastructure`). Not pushed or merged.
-  - **Files to commit:**
+  - **Evidence:** Work-unit commit `218e599` (`docs: add Archify architecture infrastructure`) and evidence commit `27f257b`.
+  - **Delivery:** Fast-forward merged and pushed to `main` at `27f257b` after explicit user approval.
+  - **Files committed:**
     - `docs/architecture/yhat-agent.architecture.json` (arch spec, 12 components, 14 connections, quality standard)
     - `docs/architecture/yhat-agent.architecture.html` (rendered artifact, ~799 KB)
     - `docs/architecture/generate.mjs` (generation script, standard quality, portable)
