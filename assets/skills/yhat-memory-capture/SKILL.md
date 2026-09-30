@@ -1,13 +1,21 @@
 ---
 name: yhat-memory-capture
-description: "Capture durable YHat knowledge to Engram. Triggered when the yhat-memory-capture agent is selected. Saves to Engram via mem_save with yhat.* topic pattern."
+description: "Capture YHat knowledge silently with enrichment queue and audit mode. Triggered when the yhat-memory-capture agent is selected."
 compatibility: opencode
-version: "1.0.0"
+version: "1.1.0"
 ---
 
 # YHat Memory Capture Skill
 
-Convert durable YHat knowledge emerged during conversation into Engram observations with the `yhat.*` topic pattern.
+Convert durable YHat knowledge emerged during conversation into Engram observations with silent capture, automatic enrichment from session context, and user-controlled question surfacing.
+
+## Core Behavior
+
+1. **Silent capture**: Save atomic facts immediately when user states them
+2. **Auto-enrichment**: Try to answer audit gaps from code, queries, files in session
+3. **Queue management**: Unanswered questions go to enrichment queue
+4. **User-controlled questions**: Surface questions only at pauses, explicit requests, or session close
+5. **Audit mode**: Generate read-only coverage reports
 
 ## Topic Key Pattern
 
@@ -38,6 +46,8 @@ Domain is derived from the content context:
 - `auth` — Authentication/authorization
 - `branch` — Branch/branching logic
 - `payment` — Payment processing
+- `office` — Office/branch entities
+- `ibd` — Investment Banking Division
 - Or any meaningful domain from the content
 
 ### Topic Key Examples
@@ -46,48 +56,84 @@ Domain is derived from the content context:
 |--------------|-----------|
 | "FA display separator" | `yhat.rule.fa.display-separator` |
 | "Code to FA relationship" | `yhat.map.codes.fa-relationship` |
-| "Branch mapping rules" | `yhat.rule.branch.mapping` |
+| "Office to IBD mapping" | `yhat.map.office.ibd-relationship` |
+| "Custodian validation rule" | `yhat.rule.custodian.validation` |
+| "FA↔Office mapping per institution" | `yhat.map.fa-office.{institution}` |
 | "Duplicate detection logic" | `yhat.obs.aum.duplicate-detection` |
 | "Code creation process" | `yhat.process.codes.creation` |
 | "Auth token expiry" | `yhat.excep.auth.token-expiry` |
 
-## Save Contract
+## Engram Schema (Verified Fields)
 
-### Required mem_save Fields
+### Native mem_save Fields
 
 | Field | Value | Notes |
 |-------|-------|-------|
 | `project` | `yhat` | Fixed project |
 | `type` | `yhat-knowledge` | All YHat observations |
 | `topic_key` | `yhat.{type}.{domain}.{concept}` | Pattern: 3-4 segments |
-| `title` | Short, descriptive | 1 sentence max |
-| `content` | Knowledge + metadata | See format below |
+| `title` | Short, descriptive | Required, searchable |
+| `content` | Knowledge + metadata | Full statement + YHat Metadata section |
 | `scope` | `project` | Fixed scope |
-| `review_after` | ISO timestamp | +7 days default |
-| `source_session` | Session ID | From runtime |
-| `source_workspace` | Workspace path | From runtime |
 
-### Content Format
+### Metadata Inside content (NOT Native Fields)
 
-```
-{knowledge statement in natural language}
+All metadata goes inside `content` under `## YHat Metadata`:
 
+```markdown
 ## YHat Metadata
 - source: {business-user|ai-agent|validation-agent}
-- original_type: {vocabulary type}
+- original_type: {topic segment}
 - confidence: {0.0-1.0}
+- status: {proposed|confirmed|deprecated|contradicted|pending-enrichment}
+- validated_by: {role/alias|pending}
 - captured_at: {ISO timestamp}
+- review_after: {ISO timestamp}
+- evidence: {table.field, file, ticket reference}
+- related_topic: {topic_key|null}
+- supersedes: {topic_key|null}
 ```
 
-### Optional Fields
+## Capture Protocol
 
-| Field | Default | Notes |
-|-------|---------|-------|
-| `source_tool` | null | Tool that captured |
-| `created_by` | null | Anonymized identifier |
-| `related_topic` | null | For cross-references |
+### Step 1: Initial Check (On Activation)
 
-## Vocabulary → Topic Mapping
+```
+1. Check if Engram tools are available
+2. mem_search({ project: "yhat", query: "yhat", type: "yhat-knowledge", limit: 50 })
+3. Summarize: existing domains, empty areas, pending questions count
+4. NO questions
+```
+
+### Step 2: Identify Knowledge
+
+Stay attentive for:
+- Business rules stated explicitly
+- Decisions made about data handling
+- Entity relationships and mappings
+- Process definitions
+- Exceptions or anomaly patterns
+- User corrections of data
+
+### Step 3: Validate Eligibility
+
+### MUST Capture
+
+✅ Business rules and decisions
+✅ Verified facts from operational systems
+✅ Entity relationships and mappings
+✅ Process descriptions
+✅ Exception handling rules
+✅ Data quality observations
+
+### MUST Reject
+
+❌ **Secrets**: passwords, API keys, tokens, bearer, ENV vars
+❌ **Transient**: session summaries, transcripts, debug logs
+❌ **Personal Data**: user paths, local configs, session state
+❌ **Chatty Content**: greetings, acknowledgements, off-topic
+
+### Step 4: Vocabulary → Topic Mapping
 
 | Keywords (ES/EN) | Topic Segment |
 |-----------------|---------------|
@@ -104,200 +150,171 @@ Domain is derived from the content context:
 | default pattern, technical standard | `tech` |
 | (unknown) | `obs` |
 
-## Eligibility Rules
+### Step 5: Silent Save
 
-### MUST Capture
+```javascript
+// Immediately after user states a fact
+mem_save({
+  project: "yhat",
+  type: "yhat-knowledge",
+  topic_key: "yhat.map.fa-office.banco-nacion",
+  title: "FA to Office mapping for Banco Nación",
+  content: `FA codes map to Office 'OF-BNA-001' for Banco Nación custodian.
 
-✅ Business rules and decisions
-✅ Verified facts from operational systems
-✅ Technical standards and conventions
-✅ Entity relationships and mappings
-✅ Process descriptions
-✅ Exception handling rules
-✅ Data quality observations
+## YHat Metadata
+- source: business-user
+- original_type: mapping
+- confidence: 0.95
+- status: proposed
+- validated_by: pending
+- captured_at: ${new Date().toISOString()}
+- review_after: ${futureDate(7)}
+- evidence: "CustodianMapping table, OfficeCode column"
+- related_topic: null`,
+  scope: "project"
+})
 
-### MUST Reject
+// One-line confirmation only
+"Guardado: yhat.map.fa-office.banco-nacion"
+```
 
-❌ **Secrets**: passwords, API keys, tokens, bearer, ENV vars
-❌ **Transient**: session summaries, transcripts, debug logs
-❌ **Drafts**: WIP, TODO, TBD, unconfirmed guesses (frame as `assum` if explicit)
-❌ **Personal Data**: user paths, local configs, session state
-❌ **Chatty Content**: greetings, acknowledgements, off-topic
+### Step 6: Evaluate Enrichment Gaps
 
-## Capture Protocol
+For each saved fact, evaluate:
+- Business rationale (why this rule exists)
+- Scope and exceptions
+- Origin (which system/table/field)
+- Validity period
+- Owner who can validate
+- Real example
+- Relation to other records
 
-### Step 1: Identify Knowledge
-Stay attentive throughout the conversation for durable knowledge opportunities.
+### Step 7: Auto-Enrichment
 
-### Step 2: Validate Eligibility
-- Check against rejection patterns (secrets, transient, drafts, personal data)
-- Reject ineligible content silently
+Before enqueuing a question, try to answer from session context:
 
-### Step 3: Map Vocabulary
-- Extract keywords from content
-- Map to appropriate topic segment
+```javascript
+// If user shared a SQL query with the mapping
+if (userSharedQuery.includes("OfficeCode")) {
+  // Update the existing record
+  mem_update({
+    id: existingRecordId,
+    content: existingContent + "\n- evidence: \"SQL query: SELECT * FROM CustodianMapping WHERE OfficeCode LIKE 'BNA%'\""
+  })
+  // Do NOT mark as confirmed
+}
+```
 
-### Step 4: Build Topic Key
-- Pattern: `yhat.{segment}.{domain}.{concept}`
-- Lowercase, hyphens for spaces
-- 3-4 segments total
+### Step 8: Queue Management
 
-### Step 5: Format Content
-- Knowledge statement first
-- YHat Metadata section at bottom
-- Include source, original_type, confidence, timestamp
-
-### Step 6: Call mem_save
+If cannot auto-enrich, save question as:
 
 ```javascript
 mem_save({
   project: "yhat",
   type: "yhat-knowledge",
-  topic_key: "yhat.rule.fa.display-separator",
-  title: "FA display uses space-slash-space",
-  content: `When a Code has multiple FA values, they are displayed separated by ' / ' (space-slash-space).
+  topic_key: "yhat.assum.fa-office.banco-nacion.scope",
+  title: "Scope of Banco Nación FA mapping",
+  content: `Question: Does this FA↔Office mapping apply to IBD system as well?
+
+Related to: yhat.map.fa-office.banco-nacion
 
 ## YHat Metadata
 - source: ai-agent
-- original_type: business-rule
-- confidence: 0.9
-- captured_at: ${new Date().toISOString()}`,
-  scope: "project",
-  review_after: "${futureDate(7)}",
-  source_session: "${sessionId}",
-  source_workspace: "${workspace}"
+- original_type: assumption
+- confidence: 0.4
+- status: pending-enrichment
+- validated_by: pending
+- captured_at: ${new Date().toISOString()}
+- review_after: ${futureDate(3)}`,
+  scope: "project"
 })
 ```
 
-### Step 7: Review Reminder
-At session wrap-up, ask:
-> "¿Hay algo importante que capture durante esta sesión que deba registrarse?"
+## When to Surface Questions
 
-## Rejection Patterns
-
-### Secrets (Always Reject)
+### Natural Pause
+User says: "listo", "gracias", "eso es todo", "terminamos", or changes topic clearly.
 
 ```
-- password, passwd, pwd
-- secret, api_key, apikey, api-key
-- token, bearer, credentials
-- aws_secret, private_key
-- ENV vars with secrets
+Tengo ${queue.length} preguntas para completar lo que capturé.
+¿Las vemos ahora o las dejo para después?
 ```
 
-### Transient (Always Reject)
+### Explicit Request
+User says: "enriquecé", "qué te falta", "hacéme preguntas", "show queue"
 
 ```
-- summary, transcript, session-log
-- conversation-log, debug-output
-- "last message", "continuing from"
-- session state
+${formatQueue(queue)}
 ```
 
-### Drafts (Always Reject)
+### Real Blockage
+Ambiguity would make the record incorrect AND cannot continue.
 
 ```
-- draft, wip, TODO, TBD
-- "[ ]", "check this later"
-- "not sure yet", "might change"
+Solo una pregunta sobre esto: [brief question]
 ```
 
-### Personal Data (Always Reject)
+### Session Close
+See Session Close Protocol below.
+
+## Queue Format
 
 ```
-- /home/username/...
-- Session-specific variables
-- Machine configs
-- Temporary debug vars
+Tengo ${n} preguntas para cerrar lo que capturé:
+
+1. [yhat.rule.codes.primary-key] ¿Cuál es el rango de fechas de vigencia?
+2. [yhat.map.fa-office] ¿Este mapeo aplica también para IBD?
+3. [yhat.assum.api-response] ¿Hay documentación oficial?
+
+Respondé "skip" para las que no puedas responder ahora.
 ```
 
-## Query Examples
-
-### Retrieve All YHat Knowledge
-
-```javascript
-// All YHat observations
-mem_search({ project: "yhat", topic_key: "yhat.*" })
-
-// Only decisions
-mem_search({ project: "yhat", topic_key: "yhat.decision.*" })
-
-// Only business rules
-mem_search({ project: "yhat", topic_key: "yhat.rule.*" })
-
-// FA related
-mem_search({ project: "yhat", topic_key: "yhat.*.fa.*" })
-
-// Pending review (needs_review state)
-mem_review({ action: "list", project: "yhat" })
-```
-
-## Example Payloads
-
-### Valid: Business Rule
-
-```json
-{
-  "project": "yhat",
-  "type": "yhat-knowledge",
-  "topic_key": "yhat.rule.fa.display-separator",
-  "title": "FA display uses space-slash-space",
-  "content": "When a Code has multiple FA values, they are displayed separated by ' / ' (space-slash-space).\n\n## YHat Metadata\n- source: ai-agent\n- original_type: business-rule\n- confidence: 0.9\n- captured_at: 2025-01-15T10:30:00Z",
-  "scope": "project",
-  "review_after": "2025-01-22T10:30:00Z",
-  "source_session": "sess_abc123",
-  "source_workspace": "/workspace/my-project"
-}
-```
-
-### Valid: Decision
-
-```json
-{
-  "project": "yhat",
-  "type": "yhat-knowledge",
-  "topic_key": "yhat.decision.codes.primary-key",
-  "title": "Code uses composite key",
-  "content": "Code entities are identified by a composite key of (CodeId, SourceSystem).\n\n## YHat Metadata\n- source: business-user\n- original_type: decision\n- confidence: 0.95\n- captured_at: 2025-01-15T11:00:00Z",
-  "scope": "project",
-  "review_after": "2025-01-22T11:00:00Z",
-  "source_session": "sess_def456",
-  "source_workspace": "/workspace/my-project"
-}
-```
-
-### Valid: Assumption
-
-```json
-{
-  "project": "yhat",
-  "type": "yhat-knowledge",
-  "topic_key": "yhat.assum.fa.sorting",
-  "title": "FA values should be sorted",
-  "content": "I assume FA values should be sorted alphabetically for consistency, but this needs verification.\n\n## YHat Metadata\n- source: ai-agent\n- original_type: assumption\n- confidence: 0.6\n- captured_at: 2025-01-15T11:30:00Z",
-  "scope": "project",
-  "review_after": "2025-01-16T11:30:00Z",
-  "source_session": "sess_ghi789",
-  "source_workspace": "/workspace/my-project"
-}
-```
-
-### Rejected: Transient Summary
+## Session Close Protocol
 
 ```
-❌ "Session summary: We discussed FA display, reviewed the code, and decided to use space-slash"
+Al cerrar la sesión:
+
+1. Listar hechos durables sin guardar → ofrecer guardarlos
+2. Mostrar cola: "Tengo ${n} preguntas pendientes. ¿Las respondemos ahora?"
+3. Si el usuario dice "después" → no insistir en esta sesión
+4. La próxima sesión: mencionar cola pendiente en resumen inicial
 ```
 
-### Rejected: Secret
+## Audit Mode
+
+Activated with: "auditá yhat", "yhat audit", "reporte de yhat"
+
+### Report Format
 
 ```
-❌ "The API key is stored as environment variable API_KEY=secret123xyz"
-```
+## YHat Audit Report — ${date}
 
-### Rejected: Draft
+### Coverage
+- Total records: ${total}
+- By type: decision(${n}), rule(${n}), map(${n}), obs(${n}), assum(${n})
+- By domain: fa(${n}), codes(${n}), office(${n}), custodian(${n})
 
-```
-❌ "TODO: verify this behavior with the actual data"
+### Pending Review
+- status: proposed → ${n}
+- status: pending-enrichment → ${n}
+- review_after < today → ${n}
+
+### Quality
+- confidence < 0.7 → ${n}
+- Sin evidence → ${n}
+
+### Enrichment Queue
+- Preguntas abiertas → ${n}
+- Sin respuesta por 14+ días → ${n}
+
+### Coverage Gaps
+- Custodians sin conocimiento: ${list}
+- Instituciones sin mapeos: ${list}
+
+### Top 10 Preguntas
+1. [pregunta] → [topic_key]
+...
 ```
 
 ## Validation Checklist
@@ -308,17 +325,65 @@ Before calling mem_save:
 - [ ] `type` is `yhat-knowledge`
 - [ ] `topic_key` matches `yhat\.[a-z]+\.[a-z]+.*`
 - [ ] `title` is short and descriptive
-- [ ] `content` includes knowledge + YHat Metadata
+- [ ] `content` includes knowledge + YHat Metadata section
 - [ ] `scope` is `project`
-- [ ] `review_after` is set (default +7 days)
 - [ ] No secrets/credentials in any field
 - [ ] No session-specific paths
-- [ ] `source_session` and `source_workspace` captured
+- [ ] One atomic fact per record (not multiple rules in one)
 
-## Notes
+## Example Payloads
 
-- **Human review required**: All observations start pending review
-- **Engram storage**: Uses `mem_save` — no separate YHat backend needed
-- **Filtering**: Use `topic_key: "yhat.*"` to retrieve all YHat knowledge
-- **Single system**: YHat and regular project memories coexist in Engram
-- **Confidence defaults**: 0.7 for normal, higher with strong evidence, lower for assumptions
+### Valid: Business Rule
+
+```json
+{
+  "project": "yhat",
+  "type": "yhat-knowledge",
+  "topic_key": "yhat.rule.codes.primary-key",
+  "title": "Code uses composite key",
+  "content": "Code entities are identified by a composite key of (CodeId, SourceSystem).\n\n## YHat Metadata\n- source: business-user\n- original_type: decision\n- confidence: 0.95\n- status: proposed\n- validated_by: pending\n- captured_at: 2025-01-15T11:00:00Z\n- review_after: 2025-01-22T11:00:00Z\n- evidence: \"CodeEntity.cs, composite key definition\"",
+  "scope": "project"
+}
+```
+
+### Valid: Mapping
+
+```json
+{
+  "project": "yhat",
+  "type": "yhat-knowledge",
+  "topic_key": "yhat.map.fa-office.banco-nacion",
+  "title": "FA to Office mapping for Banco Nación",
+  "content": "FA codes map to Office 'OF-BNA-001' for Banco Nación custodian.\n\n## YHat Metadata\n- source: business-user\n- original_type: mapping\n- confidence: 0.9\n- status: proposed\n- validated_by: pending\n- captured_at: 2025-01-15T10:00:00Z\n- review_after: 2025-01-22T10:00:00Z\n- evidence: \"CustodianMapping table, OfficeCode column\"",
+  "scope": "project"
+}
+```
+
+### Valid: Assumption with Enrichment Question
+
+```json
+{
+  "project": "yhat",
+  "type": "yhat-knowledge",
+  "topic_key": "yhat.assum.fa-office.banco-nacion.ibd-scope",
+  "title": "IBD scope for Banco Nación mapping",
+  "content": "Question: Does this FA↔Office mapping apply to IBD system?\n\nRelated to: yhat.map.fa-office.banco-nacion\n\n## YHat Metadata\n- source: ai-agent\n- original_type: assumption\n- confidence: 0.4\n- status: pending-enrichment\n- validated_by: pending\n- captured_at: 2025-01-15T10:05:00Z\n- review_after: 2025-01-18T10:05:00Z",
+  "scope": "project"
+}
+```
+
+### Rejected: Secret
+
+```json
+❌ { "content": "API key is stored as env var API_KEY=sk-123..." }
+```
+
+### Rejected: Session Summary
+
+```json
+❌ { "content": "Session summary: discussed FA display, reviewed code..." }
+```
+
+## Version
+
+1.1.0 — Silent capture, enrichment queue, audit mode

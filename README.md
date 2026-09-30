@@ -36,9 +36,36 @@ is never overwritten; users apply the update by replacing it manually after revi
 assets into your local OpenCode configuration directory. It tracks only its own files
 and can safely update from GitHub Releases.
 
-YHat captures durable operational knowledge (business rules, decisions, patterns) during
-AI coding sessions and saves it to **Engram** with a structured topic pattern for easy
-filtering.
+YHat captures durable operational knowledge (business rules, decisions, patterns, mappings)
+during AI coding sessions with three key behaviors:
+
+### 1. Silent Capture
+
+The agent saves atomic facts immediately when you state them — no waiting until session end,
+no interruptions. One fact per record. After saving, a one-line confirmation only:
+`Guardado: yhat.map.fa-office.banco-nacion`.
+
+### 2. Enrichment Queue
+
+For each saved fact, the agent evaluates what is missing for full auditability (business
+rationale, scope, exceptions, origin, validity, owner). Before asking you, it tries to
+answer from code, queries, or files you shared in the session. Questions it cannot answer
+go to an enrichment queue, persisted in Engram to survive between sessions.
+
+The agent only asks questions at moments you control:
+- Natural pauses ("listo", "gracias", topic change)
+- Explicit requests ("enriquecé", "qué te falta")
+- Real blockage (one brief question only)
+- Session close
+
+### 3. Audit Mode
+
+Activate with "auditá yhat" for a read-only coverage report:
+- Records by type and domain
+- Pending review and low-confidence records
+- Open enrichment questions (including 14+ days stale)
+- Coverage gaps (which custodians, institutions have no knowledge)
+- Top 10 questions to close
 
 ### Topic Pattern
 
@@ -62,21 +89,23 @@ All YHat observations use: `yhat.{type}.{domain}.{concept}`
 
 ```javascript
 // All YHat observations
-mem_search({ project: "yhat", topic_key: "yhat.*" })
+mem_search({ project: "yhat", query: "yhat", type: "yhat-knowledge" })
 
-// Only decisions
-mem_search({ project: "yhat", topic_key: "yhat.decision.*" })
+// Pending enrichment questions
+mem_search({ project: "yhat", query: "pending-enrichment", type: "yhat-knowledge" })
 
-// FA related rules
-mem_search({ project: "yhat", topic_key: "yhat.rule.fa.*" })
+// Records needing review
+mem_review({ action: "list", project: "yhat" })
 ```
 
 ### Benefits
 
+- **Silent capture**: Saves facts immediately without interrupting your work
+- **Auto-enrichment**: Attempts to answer audit gaps from session context
+- **User-controlled questions**: Surfaces enrichment queue only at pauses you control
+- **Audit mode**: Generate coverage and quality reports on demand
+- **Human review**: All observations start pending confirmation
 - **Single system**: Uses Engram — no separate YHat backend
-- **Easy filtering**: Topic pattern `yhat.*` retrieves all YHat knowledge
-- **Human review**: All observations start pending review (`review_after`)
-- **Shared storage**: Engram.db can be shared with other projects that read `yhat.*`
 
 ## Source layout
 
