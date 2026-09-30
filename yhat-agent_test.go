@@ -689,6 +689,920 @@ func TestEmbeddedAssets(t *testing.T) {
 	}
 }
 
+// --- Test: Embedded assets contain required metadata fields ---
+
+func TestEmbeddedAssets_RequiredMetadataFields(t *testing.T) {
+	requiredFields := []string{
+		"compliance_score",
+		"coverage_state",
+		"hygiene_gate",
+		"adjacent_topics",
+		"dotted_keys",
+		"bootstrap_mode",
+		"aged_at",
+		"aging_reason",
+		"is_example",
+		"validated_at",
+	}
+
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		for _, field := range requiredFields {
+			if !strings.Contains(content, field) {
+				t.Errorf("[%s] missing required metadata field: %s", filepath.Base(path), field)
+			}
+		}
+	}
+}
+
+// --- Test: Embedded assets do not contain yhat.index.master ---
+
+func TestEmbeddedAssets_NoLegacyIndexMaster(t *testing.T) {
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		// Allow the note about removal, but no active usage of the pattern
+		// Look for the pattern in a way that indicates active usage vs documentation
+		lines := strings.Split(content, "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "yhat.index.master") && !strings.Contains(line, "legacy") && !strings.Contains(line, "removed") {
+				t.Errorf("[%s] must not contain active yhat.index.master pattern (found: %s)", filepath.Base(path), strings.TrimSpace(line))
+				break
+			}
+		}
+	}
+}
+
+// --- Test: Embedded assets use fictitious examples ---
+
+func TestEmbeddedAssets_FictitiousExamples(t *testing.T) {
+	realBusinessPatterns := []string{
+		"Banco Nación",
+		"banco-nacion",
+		"OF-BNA",
+	}
+
+	fictitiousPatterns := []string{
+		"EntidadA",
+		"EntidadB",
+		"SISTEMAA",
+		"SISTEMAB",
+		"SISTEMAC",
+		"SUC-A001",
+		"SUC-B002",
+		"EJEMPLO-NO-REAL",
+	}
+
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		// Check for real business patterns (should not exist except in Rejected examples)
+		for _, pattern := range realBusinessPatterns {
+			// Allow in Rejected examples section
+			lines := strings.Split(content, "\n")
+			inRejected := false
+			rejectedSectionEnd := 0
+			for i, line := range lines {
+				if strings.Contains(line, "Rejected:") {
+					inRejected = true
+					rejectedSectionEnd = i + 5 // Allow a few lines after Rejected:
+				}
+				if inRejected && i >= rejectedSectionEnd {
+					inRejected = false
+				}
+				if strings.Contains(line, pattern) {
+					if !inRejected {
+						t.Errorf("[%s] contains real business pattern %q outside Rejected examples", filepath.Base(path), pattern)
+						break
+					}
+				}
+			}
+		}
+
+		// Check for fictitious patterns (should exist in SKILL.md examples)
+		if strings.HasSuffix(path, "SKILL.md") {
+			hasFictitious := false
+			for _, pattern := range fictitiousPatterns {
+				if strings.Contains(content, pattern) {
+					hasFictitious = true
+					break
+				}
+			}
+			// Only SKILL.md needs to demonstrate fictitious examples
+			if !hasFictitious {
+				t.Logf("[%s] SKILL.md should contain fictitious examples", filepath.Base(path))
+			}
+		}
+	}
+}
+
+// --- Test: Embedded assets document source of truth model ---
+
+func TestEmbeddedAssets_SourceOfTruthModel(t *testing.T) {
+	requiredPhrases := []string{
+		"source of truth",
+		"yhat-knowledge",
+		"Engram provides capture and staging",
+		"does not promise automatic ingestion",
+		"staging records",
+		"human confirms",
+	}
+
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		for _, phrase := range requiredPhrases {
+			if !strings.Contains(strings.ToLower(content), strings.ToLower(phrase)) {
+				t.Errorf("[%s] missing source-of-truth phrase: %s", filepath.Base(path), phrase)
+			}
+		}
+	}
+}
+
+// --- Test: Embedded assets document Step 0 verification ---
+
+func TestEmbeddedAssets_Step0Verification(t *testing.T) {
+	requiredSteps := []string{
+		"Step 0",
+		"Engram Availability Check",
+		"Dotted Search",
+		"Filter Verification",
+		"mem_update",
+		"Project Binding",
+	}
+
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		for _, step := range requiredSteps {
+			if !strings.Contains(content, step) {
+				t.Errorf("[%s] missing Step 0 component: %s", filepath.Base(path), step)
+			}
+		}
+	}
+}
+
+// --- Test: Embedded assets document bootstrap mode ---
+
+func TestEmbeddedAssets_BootstrapMode(t *testing.T) {
+	requiredPhrases := []string{
+		"Bootstrap Mode",
+		"bootstrap_mode",
+		"Engram is empty",
+		"foundational knowledge",
+	}
+
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		for _, phrase := range requiredPhrases {
+			if !strings.Contains(content, phrase) {
+				t.Errorf("[%s] missing bootstrap mode component: %s", filepath.Base(path), phrase)
+			}
+		}
+	}
+}
+
+// --- Test: Embedded assets document hygiene gate ---
+
+func TestEmbeddedAssets_HygieneGate(t *testing.T) {
+	requiredPhrases := []string{
+		"Hygiene Gate",
+		"hygiene_gate",
+		"pass",
+		"warn",
+		"fail",
+	}
+
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		for _, phrase := range requiredPhrases {
+			if !strings.Contains(content, phrase) {
+				t.Errorf("[%s] missing hygiene gate component: %s", filepath.Base(path), phrase)
+			}
+		}
+	}
+}
+
+// --- Test: Embedded assets document compliance score ---
+
+func TestEmbeddedAssets_ComplianceScore(t *testing.T) {
+	requiredPhrases := []string{
+		"compliance_score",
+		"Compliance Score",
+	}
+
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		for _, phrase := range requiredPhrases {
+			if !strings.Contains(content, phrase) {
+				t.Errorf("[%s] missing compliance score component: %s", filepath.Base(path), phrase)
+			}
+		}
+	}
+}
+
+// --- Test: Compliance score uses percentage format, not 0.0-1.0 decimal ---
+// Catches stale contradiction where compliance was documented as 0.0-1.0 instead of 0-100%.
+
+func TestEmbeddedAssets_ComplianceScoreUsesPercentage(t *testing.T) {
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		// Must document 0-100%% or percentage format for compliance_score
+		if !strings.Contains(content, "0–100%") && !strings.Contains(content, "0-100%") && !strings.Contains(content, "0–100 %") {
+			t.Errorf("[%s] compliance_score must document 0-100%% range, not 0.0-1.0", filepath.Base(path))
+		}
+
+		// Must NOT have the stale "0.0–1.0" phrasing for compliance
+		// This catches the old duplicate prose
+		stalePhrases := []string{
+			"compliance score (0.0",
+			"compliance score (0.0–1.0",
+			"Calculated compliance score (0.0",
+		}
+		for _, stale := range stalePhrases {
+			if strings.Contains(content, stale) {
+				t.Errorf("[%s] stale compliance format found: %q - use 0-100%% not 0.0-1.0", filepath.Base(path), stale)
+			}
+		}
+	}
+}
+
+// --- Test: Compliance formula uses five binary checks with 100 × passed_checks / 5 ---
+// Ensures the authoritative formula is documented and the old weighted decimal formula is removed.
+
+func TestEmbeddedAssets_ComplianceFormulaFiveChecks(t *testing.T) {
+	requiredElements := []string{
+		"passed_checks", // Formula reference
+		"five",          // Exactly five checks
+	}
+
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		for _, elem := range requiredElements {
+			if !strings.Contains(content, elem) {
+				t.Errorf("[%s] missing compliance formula element: %s", filepath.Base(path), elem)
+			}
+		}
+
+		// Must NOT have the stale weighted decimal formula with 0.20, 0.15, etc.
+		staleFormulaIndicators := []string{
+			"0.20",
+			"0.15",
+			"0.10",
+			"hasValidMetadata ? 0.20",
+			"hasEvidence ? 0.20",
+			"confidence * 0.15",
+		}
+		for _, indicator := range staleFormulaIndicators {
+			if strings.Contains(content, indicator) {
+				t.Errorf("[%s] stale weighted formula found (0.20/0.15/0.10 weights) - use five binary checks instead", filepath.Base(path))
+			}
+		}
+	}
+}
+
+// --- Test: Audit thresholds use percentage format, not decimal like < 0.5 ---
+// Catches stale thresholds like "compliance < 0.5" which should be "compliance < 50%"
+
+func TestEmbeddedAssets_AuditThresholdsUsePercentage(t *testing.T) {
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		// Must NOT have decimal thresholds for compliance
+		staleThresholds := []string{
+			"compliance < 0.5",
+			"compliance < 0.3",
+			"compliance < 0.7",
+			"compliance < 0.1",
+			"compliance < 0.2",
+			"compliance < 0.4",
+			"compliance < 0.6",
+			"compliance < 0.8",
+		}
+		for _, stale := range staleThresholds {
+			if strings.Contains(content, stale) {
+				t.Errorf("[%s] stale decimal threshold found: %q - use percentage like < 50%% instead", filepath.Base(path), stale)
+			}
+		}
+
+		// Audit section should use percentage thresholds
+		lines := strings.Split(content, "\n")
+		inAuditSection := false
+		for _, line := range lines {
+			if strings.Contains(strings.ToLower(line), "compliance summary") || strings.Contains(strings.ToLower(line), "compliance <") {
+				inAuditSection = true
+			}
+			if inAuditSection && strings.Contains(line, "compliance <") {
+				// Must use percentage, not decimal
+				if strings.Contains(line, "0.") {
+					t.Errorf("[%s] audit section uses decimal threshold instead of percentage: %s", filepath.Base(path), strings.TrimSpace(line))
+				}
+				if !strings.Contains(line, "50%") && !strings.Contains(line, "%") {
+					t.Errorf("[%s] audit threshold should use percentage format: %s", filepath.Base(path), strings.TrimSpace(line))
+				}
+			}
+			// End of audit section
+			if inAuditSection && strings.HasPrefix(strings.TrimSpace(line), "###") {
+				inAuditSection = false
+			}
+		}
+	}
+}
+
+// --- Test: Confidence is documented as separate 0.0-1.0 field from compliance ---
+// Ensures confidence and compliance are distinct concepts.
+
+func TestEmbeddedAssets_ConfidenceIsSeparateFromCompliance(t *testing.T) {
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		// Must document confidence as separate field
+		if !strings.Contains(content, "confidence") {
+			t.Errorf("[%s] missing confidence field documentation", filepath.Base(path))
+		}
+
+		// Must explicitly state confidence uses 0.0-1.0 scale
+		confidenceScaleIndicators := []string{
+			"0.0–1.0",
+			"0.0-1.0",
+			"0.0–1.0 scale",
+		}
+		hasConfidenceScale := false
+		for _, indicator := range confidenceScaleIndicators {
+			if strings.Contains(content, indicator) {
+				hasConfidenceScale = true
+				break
+			}
+		}
+		if !hasConfidenceScale {
+			t.Errorf("[%s] confidence must be documented as 0.0-1.0 scale", filepath.Base(path))
+		}
+
+		// Must state that confidence does NOT affect compliance score
+		confidenceNotComplianceIndicators := []string{
+			"does not affect the compliance",
+			"does not affect compliance",
+			"separate",
+			"independent",
+		}
+		hasSeparation := false
+		for _, indicator := range confidenceNotComplianceIndicators {
+			if strings.Contains(content, indicator) {
+				hasSeparation = true
+				break
+			}
+		}
+		if !hasSeparation {
+			t.Errorf("[%s] must state that confidence is separate from compliance score", filepath.Base(path))
+		}
+	}
+}
+
+// --- Test: Compliance score examples use valid formula results (0%, 20%, 40%, 60%, 80%, 100%) ---
+// The formula produces only multiples of 20%, so example values must match.
+
+func TestEmbeddedAssets_ComplianceScoreExamplesAreValid(t *testing.T) {
+	validScores := map[string]bool{
+		"0":   true,
+		"20":  true,
+		"40":  true,
+		"60":  true,
+		"80":  true,
+		"100": true,
+	}
+
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		// Find all compliance_score values in example content (inside code blocks)
+		lines := strings.Split(content, "\n")
+		inCodeBlock := false
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+
+			// Track code blocks (examples)
+			if strings.HasPrefix(trimmed, "```") {
+				inCodeBlock = !inCodeBlock
+				continue
+			}
+
+			// Only check inside code blocks (example content)
+			if inCodeBlock && strings.Contains(trimmed, "compliance_score:") {
+				// Extract the number - handle cases like "- compliance_score: 80" or "compliance_score: 80"
+				parts := strings.Split(trimmed, "compliance_score:")
+				if len(parts) > 1 {
+					val := strings.TrimSpace(parts[1])
+					// Remove trailing punctuation/comments
+					val = strings.TrimSuffix(val, ",")
+					// Handle JSON escaped newlines: split at actual newline (byte 0x0A) OR at literal \n sequence
+					// The literal backslash-n is two chars: 0x5C (\) followed by 0x6E (n)
+					valParts := strings.SplitN(val, "\n", 2) // Split at actual newline
+					val = valParts[0]
+					val = strings.Split(val, " ")[0] // Get just the number
+					val = strings.Split(val, "\"")[0]
+					val = strings.TrimRight(val, "-")
+					val = strings.TrimSpace(val)
+
+					// If value still contains literal \n (backslash-n sequence), extract just the number
+					if strings.Contains(val, "\\n") || strings.Contains(val, "\n") {
+						// Split at backslash or newline
+						for _, sep := range []string{"\\n", "\n", "-"} {
+							if idx := strings.Index(val, sep); idx > 0 {
+								val = strings.TrimSpace(val[:idx])
+								break
+							}
+						}
+					}
+
+					// Skip schema definitions like {0-100%}
+					if strings.HasPrefix(val, "{") {
+						continue
+					}
+
+					// Skip template variables like ${score}
+					if strings.HasPrefix(val, "${") {
+						continue
+					}
+
+					// Check if valid
+					if !validScores[val] {
+						t.Errorf("[%s] invalid compliance_score %q in example - must be 0, 20, 40, 60, 80, or 100", filepath.Base(path), val)
+					}
+				}
+			}
+		}
+	}
+}
+
+// --- Test: Embedded assets document coverage states ---
+
+func TestEmbeddedAssets_CoverageStates(t *testing.T) {
+	requiredPhrases := []string{
+		"coverage_state",
+		"Coverage State",
+		"sin registros",
+		"registrado sin validar",
+		"validado",
+	}
+
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		for _, phrase := range requiredPhrases {
+			if !strings.Contains(content, phrase) {
+				t.Errorf("[%s] missing coverage state component: %s", filepath.Base(path), phrase)
+			}
+		}
+	}
+}
+
+// --- Test: Embedded assets document ordered questions ---
+
+func TestEmbeddedAssets_OrderedQuestions(t *testing.T) {
+	requiredPhrases := []string{
+		"ordered",
+		"compliance score",
+		"lowest first",
+	}
+
+	// Check for the exact first question wording
+	exactFirstQuestion := "¿Existe documentación oficial viva (SharePoint, wiki, esquema versionado) que valide este dominio?"
+
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		foundAll := true
+		for _, phrase := range requiredPhrases {
+			if !strings.Contains(strings.ToLower(content), strings.ToLower(phrase)) {
+				foundAll = false
+				break
+			}
+		}
+		if !foundAll {
+			t.Errorf("[%s] missing ordered questions documentation", filepath.Base(path))
+		}
+
+		// Check for exact first question wording
+		if !strings.Contains(content, exactFirstQuestion) {
+			t.Errorf("[%s] missing exact first question wording", filepath.Base(path))
+		}
+	}
+}
+
+// --- Test: Embedded assets document adjacent knowledge ---
+
+func TestEmbeddedAssets_AdjacentKnowledge(t *testing.T) {
+	requiredPhrases := []string{
+		"adjacent",
+		"adjacent_topics",
+	}
+
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		for _, phrase := range requiredPhrases {
+			if !strings.Contains(content, phrase) {
+				t.Errorf("[%s] missing adjacent knowledge component: %s", filepath.Base(path), phrase)
+			}
+		}
+	}
+}
+
+// --- Test: Embedded assets document rapid review ---
+
+func TestEmbeddedAssets_RapidReview(t *testing.T) {
+	requiredPhrases := []string{
+		"Rapid Review",
+		"rapid review",
+	}
+
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		found := false
+		for _, phrase := range requiredPhrases {
+			if strings.Contains(content, phrase) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("[%s] missing rapid review documentation", filepath.Base(path))
+		}
+	}
+}
+
+// --- Test: Embedded assets document aging ---
+
+func TestEmbeddedAssets_Aging(t *testing.T) {
+	requiredPhrases := []string{
+		"aging",
+		"aged",
+		"aged_at",
+		"aging_reason",
+	}
+
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		for _, phrase := range requiredPhrases {
+			if !strings.Contains(content, phrase) {
+				t.Errorf("[%s] missing aging component: %s", filepath.Base(path), phrase)
+			}
+		}
+	}
+}
+
+// --- Test: Embedded assets document active session project ---
+
+func TestEmbeddedAssets_ActiveSessionProject(t *testing.T) {
+	requiredPhrases := []string{
+		"active session project",
+		"PI_SESSION_PROJECT",
+		"not hard-coded",
+	}
+
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		foundAll := true
+		for _, phrase := range requiredPhrases {
+			if !strings.Contains(strings.ToLower(content), strings.ToLower(phrase)) {
+				foundAll = false
+				break
+			}
+		}
+		if !foundAll {
+			t.Errorf("[%s] missing active session project documentation", filepath.Base(path))
+		}
+	}
+}
+
+// --- Test: Embedded assets document dotted key tokenization ---
+
+func TestEmbeddedAssets_DottedKeyTokenization(t *testing.T) {
+	requiredPhrases := []string{
+		"dotted_keys",
+		"tokenized",
+	}
+
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		for _, phrase := range requiredPhrases {
+			if !strings.Contains(content, phrase) {
+				t.Errorf("[%s] missing dotted key tokenization: %s", filepath.Base(path), phrase)
+			}
+		}
+	}
+}
+
+// --- Test: Embedded assets require literal tags line in content ---
+// Validates that example content blocks contain literal lines beginning with "tags:"
+// (not scattered references to "tags" in prose comments or documentation).
+// Examples are inside JavaScript/JSON code blocks, not YAML frontmatter.
+
+func TestEmbeddedAssets_LiteralTagsLine(t *testing.T) {
+	// These phrases document the requirement in prose
+	prosePhrases := []string{
+		"tags:",
+		"literal",
+	}
+
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		// Verify prose documentation of the requirement
+		for _, phrase := range prosePhrases {
+			if !strings.Contains(content, phrase) {
+				t.Errorf("[%s] missing literal tags line documentation: %s", filepath.Base(path), phrase)
+			}
+		}
+
+		// Validate actual example content blocks have literal "tags:" lines
+		// Examples are inside code blocks (```javascript or similar), look for lines after mem_save
+		foundTagsLine := false
+		inCodeBlock := false
+		lines := strings.Split(content, "\n")
+
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+
+			// Detect code block boundaries
+			if strings.HasPrefix(trimmed, "```") {
+				inCodeBlock = !inCodeBlock
+				continue
+			}
+
+			// Only look inside code blocks (examples)
+			if inCodeBlock {
+				// Look for lines starting with literal "tags:" with values
+				if strings.HasPrefix(trimmed, "tags:") {
+					afterTags := strings.TrimPrefix(trimmed, "tags:")
+					if strings.TrimSpace(afterTags) != "" {
+						foundTagsLine = true
+						break
+					}
+				}
+			}
+		}
+
+		if !foundTagsLine {
+			t.Errorf("[%s] no literal 'tags:' line with values found in code block examples", filepath.Base(path))
+		}
+	}
+}
+
+// --- Test: Embedded assets use is_example: true in fictitious example sections ---
+// Validates that fictitious examples include is_example: true and explicitly state
+// they are excluded from capture, audit gaps, and enrichment questions.
+
+func TestEmbeddedAssets_ExampleExclusionDocumentation(t *testing.T) {
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		// Verify is_example field is documented
+		if !strings.Contains(content, "is_example") {
+			t.Errorf("[%s] missing is_example field documentation", filepath.Base(path))
+		}
+
+		// Verify examples are excluded from capture
+		if !strings.Contains(strings.ToLower(content), "never captured") &&
+			!strings.Contains(strings.ToLower(content), "not captured") &&
+			!strings.Contains(strings.ToLower(content), "ejemplo") {
+			t.Errorf("[%s] missing documentation that examples are excluded from capture", filepath.Base(path))
+		}
+
+		// Verify examples are excluded from enrichment queue
+		if !strings.Contains(strings.ToLower(content), "enrichment") {
+			t.Errorf("[%s] missing documentation that examples are excluded from enrichment queue", filepath.Base(path))
+		}
+
+		// Verify examples are excluded from audit gaps
+		if !strings.Contains(strings.ToLower(content), "gaps") {
+			t.Errorf("[%s] missing documentation that examples are excluded from audit gaps", filepath.Base(path))
+		}
+	}
+}
+
+// --- Test: Embedded assets have is_example: true in actual example content blocks ---
+// Validates that fictitious example content blocks include is_example: true as a field.
+// Examples are inside JavaScript code blocks with mem_save calls.
+
+func TestEmbeddedAssets_ExampleHasIsExampleField(t *testing.T) {
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		// Look for is_example: true in code block examples (inside mem_save content)
+		foundIsExample := false
+		inCodeBlock := false
+		lines := strings.Split(content, "\n")
+
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+
+			// Detect code block boundaries
+			if strings.HasPrefix(trimmed, "```") {
+				inCodeBlock = !inCodeBlock
+				continue
+			}
+
+			// Only look inside code blocks (examples with mem_save calls)
+			if inCodeBlock {
+				// Look for is_example: true in metadata sections
+				// Handle lines that may end with backtick (template string closure)
+				if strings.HasPrefix(trimmed, "- is_example:") || strings.HasPrefix(trimmed, "is_example:") {
+					afterField := strings.TrimPrefix(trimmed, "- is_example:")
+					afterField = strings.TrimPrefix(afterField, "is_example:")
+					// Remove trailing backticks and other template string artifacts
+					afterField = strings.TrimRight(afterField, "`,")
+					afterField = strings.TrimSpace(afterField)
+					if afterField == "true" {
+						foundIsExample = true
+						break
+					}
+				}
+			}
+		}
+
+		if !foundIsExample {
+			t.Errorf("[%s] no literal 'is_example: true' found in example code blocks", filepath.Base(path))
+		}
+	}
+}
+
+// --- Test: Embedded assets document audit reports projects inspected ---
+
+func TestEmbeddedAssets_AuditReportsProjects(t *testing.T) {
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		// Check both agent and skill have audit with projects
+		if strings.Contains(path, "yhat-memory-capture.md") || strings.Contains(path, "SKILL.md") {
+			hasAudit := strings.Contains(strings.ToLower(content), "audit")
+			if hasAudit {
+				// Find the audit section
+				if !strings.Contains(strings.ToLower(content), "projects inspected") {
+					t.Errorf("[%s] audit mode must include projects inspected", filepath.Base(path))
+				}
+			}
+		}
+	}
+}
+
+// --- Test: Embedded assets have version 1.3.0 ---
+
+func TestEmbeddedAssets_Version(t *testing.T) {
+	expectedVersion := "1.3.0"
+
+	for _, path := range AssetPaths() {
+		data, err := Assets.ReadFile(path)
+		if err != nil {
+			t.Errorf("failed to read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+
+		// Check version in frontmatter for SKILL.md
+		if strings.HasSuffix(path, "SKILL.md") {
+			if !strings.Contains(content, "version: \""+expectedVersion+"\"") {
+				t.Errorf("[%s] SKILL.md should have version \"%s\"", filepath.Base(path), expectedVersion)
+			}
+		}
+
+		// Check version in Version section
+		if !strings.Contains(content, "## Version") || !strings.Contains(content, expectedVersion) {
+			t.Errorf("[%s] should contain version %s", filepath.Base(path), expectedVersion)
+		}
+	}
+}
+
 // --- Test: EnsureDir creates directories ---
 
 func TestEnsureDir(t *testing.T) {

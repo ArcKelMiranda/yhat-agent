@@ -37,75 +37,232 @@ assets into your local OpenCode configuration directory. It tracks only its own 
 and can safely update from GitHub Releases.
 
 YHat captures durable operational knowledge (business rules, decisions, patterns, mappings)
-during AI coding sessions with three key behaviors:
+during AI coding sessions with key behaviors:
 
-### 1. Silent Capture
+### 1. Silent Capture with Hygiene Gate
 
 The agent saves atomic facts immediately when you state them — no waiting until session end,
-no interruptions. One fact per record. After saving, a one-line confirmation only:
-`Guardado: yhat.map.fa-office.banco-nacion`.
+no interruptions. Before every save, a hygiene gate validates:
+- Topic key validity (must match `yhat.{type}.{domain}.{concept}`)
+- Evidence presence
+- Content quality (minimum 50 characters)
+- No secrets or credentials
+- Type appropriateness
+- Dotted key extraction
 
-### 2. Enrichment Queue
+Gate results: `pass` (save normally), `warn` (save with warning), `fail` (block save).
+
+**Hygiene requirement: literal `tags:` line.** Every fact record **must** include a literal YAML
+line beginning with `tags:` followed by at least one tag value. This is not a suggestion — the
+hygiene gate checks for a line that literally starts with `tags:` in the YAML frontmatter.
+Scattered references to "tags" in prose comments do not satisfy this requirement.
+
+### 2. Compliance Scoring
+
+Every capture receives a compliance score (0–100%) calculated from **five binary checks**:
+
+| Check | Pass Condition |
+|-------|---------------|
+| Valid topic_key | Matches `yhat.{type}.{domain}.{concept}` |
+| Evidence | `evidence` field is present and non-null |
+| Status | `status` is set (not empty) |
+| Tags line | Literal `tags:` line present in content body |
+| Complete metadata | `validated_by`, `captured_at`, and either `evidence` or `related_topic` are present |
+
+**Formula**: `compliance_score = 100 × passed_checks / 5`
+
+Result: 0%, 20%, 40%, 60%, 80%, or 100%
+
+**Confidence** (0.0–1.0) is a separate metadata field and does not affect the compliance score.
+
+Coverage states track registration status: `sin registros` (no records), `registrado sin validar` (proposed), `validado` (confirmed by human).
+
+### 3. Bootstrap Mode
+
+When Engram is empty or user requests "bootstrap", the agent:
+- Skips initial summary (nothing to summarize)
+- Includes `bootstrap_mode: true` on captures
+- Prompts for foundational knowledge areas
+- Relaxes hygiene gate (warn instead of fail)
+
+### 4. Enrichment Queue
 
 For each saved fact, the agent evaluates what is missing for full auditability (business
 rationale, scope, exceptions, origin, validity, owner). Before asking you, it tries to
-answer from code, queries, or files you shared in the session. Questions it cannot answer
-go to an enrichment queue, persisted in Engram to survive between sessions.
+answer from code, queries, or files you shared in the session.
 
+Questions are **ordered by compliance score** (lowest first), age, and business impact.
 The agent only asks questions at moments you control:
 - Natural pauses ("listo", "gracias", topic change)
-- Explicit requests ("enriquecé", "qué te falta")
+- Explicit requests ("enriquecé", "qué te falta", "revisá rápido")
 - Real blockage (one brief question only)
 - Session close
 
-### 3. Audit Mode
+### 5. Adjacent Knowledge
+
+The agent detects and links related knowledge:
+- Same domain, different concept
+- Same concept, different domain
+-上下游 relationships (upstream/downstream)
+
+Adjacent topics are stored in `adjacent_topics` metadata for cross-referencing.
+
+### 6. Rapid Review
+
+For quick batch review of multiple records, activate with "rapid review":
+```
+## Rapid Review — Batch 1/5
+
+### yhat.rule.entidad.primary-key
+- Compliance: 85% | Coverage: registrado sin validar | Hygiene: pass
+- Confidence: 0.95 | Status: proposed
+
+"Entities in SISTEMAA use composite key..."
+
+[A]pprove | [D]eprecate | [S]kip | [E]dit
+```
+
+### 7. Human Confirmation
+
+Knowledge is captured and staged in Engram as `status: proposed`. Human confirmation
+sets `status: confirmed`, `validated_by` (role/alias), and `validated_at` (date).
+The agent never sets these fields. Engram records are staging only — the external
+`yhat-knowledge` system is the authoritative source.
+
+### 8. Aging
+
+Records can be marked as aged/stale:
+- User marks as aged
+- `review_after` exceeded by 30+ days
+- Contradicted by new knowledge
+
+Aging check runs at session start and close.
+
+### 9. Audit Mode
 
 Activate with "auditá yhat" for a read-only coverage report:
 - Records by type and domain
-- Pending review and low-confidence records
-- Open enrichment questions (including 14+ days stale)
-- Coverage gaps (which custodians, institutions have no knowledge)
-- Top 10 questions to close
+- Compliance summary (average score, low compliance count)
+- Coverage states (sin registros/registrado sin validar/validado)
+- Pending review and aged records
+- Enrichment queue with compliance ordering
+- Human confirmation status (confirmed vs. proposed)
+- Adjacent knowledge links
+- Coverage gaps
 
-### Topic Pattern
+**Audit reports include "Projects Inspected"** showing which projects were queried.
+
+## Source of Truth Model
+
+**YHat knowledge lives in the external `yhat-knowledge` system**. Engram provides capture
+and staging infrastructure only — it does not promise automatic ingestion or synchronization.
+All Engram records are **staging records** proposed until a human confirms them.
+The agent never designates source of truth.
+
+Before every capture, the agent:
+1. Searches `yhat-knowledge` read-only for duplicates/contradictions
+2. Validates against existing knowledge
+3. Marks duplicates for update, contradictions for deprecation
+4. Human confirmation sets `status: confirmed`, `validated_by`, and `validated_at`
+
+## Step 0: Pre-Capture Verification
+
+The agent verifies these capabilities at startup:
+
+1. **Engram availability**: `mem_save`, `mem_update`, `mem_search` functional
+2. **Dotted search**: Partial key matching works
+3. **Filter verification**: Type, scope, project filters functional
+4. **mem_update works**: Can modify existing records
+5. **Project binding**: Saves to unrelated projects rejected by session binding
+6. **Bootstrap detection**: Empty Engram or explicit bootstrap request
+7. **Duplicate check**: Read-only search before every capture
+
+## Topic Pattern
 
 All YHat observations use: `yhat.{type}.{domain}.{concept}`
 
 | Type | Segment | Example |
 |------|---------|---------|
 | Decision | `decision` | `yhat.decision.fa-display` |
-| Business Rule | `rule` | `yhat.rule.codes.primary-key` |
+| Business Rule | `rule` | `yhat.rule.entity.primary-key` |
 | Observation | `obs` | `yhat.obs.duplicate-detection` |
-| Assumption | `assum` | `yhat.assum.api-response-format` |
-| Process | `process` | `yhat.process.code-creation` |
-| Mapping | `map` | `yhat.map.code-fa-relationship` |
-| Exception | `excep` | `yhat.excep.auth-token-expired` |
+| Assumption | `assum` | `yhat.assum.entidada-sucursal.ejemplo-no-real-scope` |
+| Process | `process` | `yhat.process.codes.creation` |
+| Mapping | `map` | `yhat.map.codes.entidada-sucursal` |
+| Exception | `excep` | `yhat.excep.auth.token-expiry` |
 | Definition | `def` | `yhat.def.code-entity` |
-| Integration | `intg` | `yhat.intg.payment-gateway` |
+| Integration | `intg` | `yhat.intg.sistemaa-ejemplo-no-real` |
 | Data Anomaly | `anom` | `yhat.anom.missing-values` |
 | Technical Rule | `tech` | `yhat.tech.retry-backoff` |
 
-### Filtering YHat Knowledge
+### Dotted Key Tokenization
 
-```javascript
-// All YHat observations
-mem_search({ project: "yhat", query: "yhat", type: "yhat-knowledge" })
+Dotted topic keys are tokenized in `dotted_keys` metadata for partial matching searches:
 
-// Pending enrichment questions
-mem_search({ project: "yhat", query: "pending-enrichment", type: "yhat-knowledge" })
-
-// Records needing review
-mem_review({ action: "list", project: "yhat" })
+```
+topic_key: yhat.rule.entity.primary-key
+dotted_keys: ["yhat", "rule", "entity", "primary-key"]
 ```
 
-### Benefits
+**Note**: The legacy `yhat.index.master` pattern is removed. Use explicit topic types.
+
+### Fictitious Examples (EJEMPLO-NO-REAL)
+
+All documentation and examples use fictitious entities marked with `EJEMPLO-NO-REAL`.
+These records are **never captured**, listed as gaps, or asked about in the enrichment queue.
+
+```
+Entities: EntidadA, EntidadB, EntidadC
+Systems: SISTEMAA, SISTEMAB, SISTEMAC
+Codes: COD-001, COD-002, COD-003
+Branches: SUC-A001, SUC-B002
+```
+
+**DO NOT USE**: Real company names, real system names, real codes from production,
+real user identifiers, or absolute local paths.
+
+## Filtering YHat Knowledge
+
+```javascript
+// All YHat observations (uses active session project)
+mem_search({ project: activeProject, query: "yhat", type: "yhat-knowledge" })
+
+// Dotted key search (tokenized)
+mem_search({ project: activeProject, query: "yhat.rule.codes", type: "yhat-knowledge" })
+
+// Pending enrichment questions
+mem_search({ project: activeProject, query: "pending-enrichment", type: "yhat-knowledge" })
+
+// Low compliance records
+mem_search({ project: activeProject, query: "compliance", type: "yhat-knowledge" })
+
+// Records needing review
+mem_review({ action: "list", project: activeProject })
+```
+
+## Active Session Project
+
+The agent uses the **active session project** from `PI_SESSION_PROJECT` environment
+variable or equivalent. It does not hard-code `yhat` as the project name. This enables:
+- Multi-project knowledge isolation
+- Session-specific capture contexts
+- Project-scoped search and review
+
+## Benefits
 
 - **Silent capture**: Saves facts immediately without interrupting your work
-- **Auto-enrichment**: Attempts to answer audit gaps from session context
+- **Hygiene gate**: Quality validation before every save (pass/warn/fail)
+- **Compliance scoring**: Tracks completeness and quality of captured knowledge
+- **Bootstrap mode**: Handles empty Engram or foundational knowledge capture
+- **Ordered questions**: Prioritized by compliance score, age, and business impact
+- **Adjacent knowledge**: Detects and links related topics
+- **Rapid review**: Quick batch processing of multiple records
+- **Aging**: Tracks stale and outdated knowledge
+- **Human confirmation**: Records start as proposed; human sets confirmed status, validated_by, validated_at
 - **User-controlled questions**: Surfaces enrichment queue only at pauses you control
 - **Audit mode**: Generate coverage and quality reports on demand
-- **Human review**: All observations start pending confirmation
-- **Single system**: Uses Engram — no separate YHat backend
+- **EJEMPLO-NO-REAL examples**: Fictitious examples excluded from audit metrics
+- **Active session project**: Session-scoped capture, not hard-coded
 
 ## Source layout
 
