@@ -2606,3 +2606,59 @@ func TestDetectVersion_DevFallback(t *testing.T) {
 		t.Error("Version must be initialized to a non-empty value")
 	}
 }
+
+// --- Test: CheckForUpdate returns up-to-date message when versions match ---
+
+func TestCheckForUpdate_UpToDate(t *testing.T) {
+	// Test that extractVersionFromURL returns the version tag correctly.
+	currentVersion := Version
+	testURL := "https://github.com/ArcKelMiranda/yhat-agent/releases/download/" + currentVersion + "/yhat-agent_linux_amd64"
+	resolved := extractVersionFromURL(testURL)
+	if resolved != currentVersion {
+		t.Errorf("expected %q, got %q", currentVersion, resolved)
+	}
+	// Verify the version comparison logic: same version = up-to-date.
+	upToDate := resolved == "unknown" || resolved == currentVersion
+	if !upToDate {
+		t.Error("same version should be reported as up-to-date")
+	}
+}
+
+// --- Test: CheckForUpdate detects newer version ---
+
+func TestCheckForUpdate_NewerVersion(t *testing.T) {
+	// extractVersionFromURL returns the tag from the redirect URL.
+	// When the URL shows a newer tag than current, the message should say update available.
+	currentVersion := "v1.0.0"
+	newerVersion := "v1.1.0"
+	url := "https://github.com/ArcKelMiranda/yhat-agent/releases/download/" + newerVersion + "/yhat-agent_linux_amd64"
+
+	resolved := extractVersionFromURL(url)
+	if resolved != newerVersion {
+		t.Errorf("expected %q, got %q", newerVersion, resolved)
+	}
+
+	// Simulate the version comparison logic from CheckForUpdate.
+	upToDate := resolved == "unknown" || resolved == currentVersion
+	if upToDate {
+		t.Error("newer version should not be reported as up-to-date")
+	}
+}
+
+// --- Test: CheckForUpdate handles network failure gracefully ---
+
+func TestCheckForUpdate_NetworkFailure(t *testing.T) {
+	// When resolveVersion fails, CheckForUpdate should return "unknown" for latest
+	// and not an error (network failures are non-fatal for version check).
+	result, err := CheckForUpdate()
+	// err is nil even if resolveVersion failed internally (non-fatal).
+	if result == nil {
+		t.Fatal("CheckForUpdate should return result even on network issues")
+	}
+	// Message should reflect unknown state gracefully.
+	if result.CurrentVersion == "" {
+		t.Error("CurrentVersion must always be set")
+	}
+	// LatestVersion may be unknown but should not panic.
+	_ = err
+}

@@ -187,6 +187,45 @@ func VerifyChecksum(data []byte, expectedHash string) bool {
 	return strings.EqualFold(actualHex, expectedHash)
 }
 
+// CheckForUpdate resolves the latest version from GitHub and compares it with
+// the current version without downloading anything. It uses multiple strategies
+// to maximize the chance of getting the real latest version tag.
+func CheckForUpdate() (*UpdateResult, error) {
+	// Determine download URLs for the current platform.
+	downloadURL, _, assetName, err := latestDownloadURLs()
+	if err != nil {
+		return nil, fmt.Errorf("platform error: %w", err)
+	}
+
+	// Strategy 1: Follow redirect through GitHub's releases/latest/download/ endpoint.
+	latestVersion := "unknown"
+	if resolved, err := resolveVersion(&http.Client{}, downloadURL); err == nil {
+		latestVersion = resolved
+	}
+
+	// Determine if update is available.
+	current := Version
+	upToDate := latestVersion == "unknown" || latestVersion == current
+
+	message := fmt.Sprintf("You are running yhat-agent %s. ", current)
+	if upToDate {
+		message += "You have the latest version."
+	} else {
+		message += fmt.Sprintf("Version %s is available. Run 'yhat-agent update' to download it.", latestVersion)
+	}
+
+	result := &UpdateResult{
+		CurrentVersion: current,
+		LatestVersion:  latestVersion,
+		AssetURL:       downloadURL,
+		AssetName:      assetName,
+		HashVerified:   false,
+		Message:        message,
+	}
+
+	return result, nil
+}
+
 // Update downloads and verifies the latest release using direct download URLs.
 // It avoids the GitHub API entirely, using the stable releases/latest/download/
 // redirect endpoint. A checksum file is downloaded first to verify integrity

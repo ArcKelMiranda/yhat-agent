@@ -46,7 +46,7 @@ Usage:
 Commands:
   install    Install embedded assets to OpenCode config directory
   status     Report installation state without making changes
-  update     Download and verify latest release from GitHub
+  update     Download and verify latest release from GitHub (use --check to verify without downloading)
   uninstall  Remove managed files (requires --yes)
   version    Show version and build information
   help       Show this help message
@@ -130,6 +130,23 @@ func runStatus() {
 }
 
 func runUpdate() {
+	checkOnly := hasFlag("--check")
+
+	if checkOnly {
+		result, err := yhatagent.CheckForUpdate()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "update check failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("yhat-agent %s", result.CurrentVersion)
+		if result.LatestVersion != "unknown" && result.LatestVersion != result.CurrentVersion {
+			fmt.Printf(" → %s", result.LatestVersion)
+		}
+		fmt.Println()
+		fmt.Println(result.Message)
+		return
+	}
+
 	fmt.Println("Fetching latest release from GitHub...")
 
 	result, err := yhatagent.Update()
