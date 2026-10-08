@@ -340,6 +340,10 @@ Stay attentive for:
 
 ```javascript
 // Immediately after user states a fact
+// 1. Obtain UTC capture timestamp from shell and use that exact output for captured_at — do NOT invent the time in the model
+//    - PowerShell: [DateTime]::UtcNow.ToString("o")
+//    - bash: date -u +%Y-%m-%dT%H:%M:%SZ
+
 mem_save({
   project: activeProject,
   type: "yhat-knowledge",
@@ -356,7 +360,7 @@ status: proposed
 - confidence: 0.95
 - status: proposed
 - validated_by: pending
-- captured_at: ${new Date().toISOString()}
+- captured_at: {shell-utc-timestamp-from-date-u}
 - review_after: ${futureDate(7)}
 - evidence: "EntityMapping table, BranchCode column"
 - related_topic: null
@@ -462,6 +466,8 @@ Order questions by:
 ### Natural Pause
 User says: "listo", "gracias", "eso es todo", "terminamos", or changes topic clearly.
 
+Before offering questions, run a read-only sweep for durable facts not yet captured and pending enrichment questions. Keep the surfaced list user-controlled and max five questions.
+
 ```
 Tengo ${queue.length} preguntas para completar lo que capturé (ordenadas por compliance).
 ¿Las vemos ahora o las dejo para después?
@@ -541,11 +547,12 @@ Adjacent: yhat.rule.entidad.effective-dates
 ```
 Al cerrar la sesión:
 
-1. Listar hechos durables sin guardar → ofrecer guardarlos
-2. Ejecutar aging check en registros con review_after + 30 días excedido
-3. Mostrar cola: "Tengo ${n} preguntas pendientes (compliance promedio: ${avg}). ¿Las respondemos ahora?"
-4. Si el usuario dice "después" → no insistir en esta sesión
-5. La próxima sesión: mencionar cola pendiente en resumen inicial
+1. Ejecutar sweep de lectura para hechos durables sin capturar y preguntas pendientes de enriquecimiento; mantener la lista en un máximo de cinco preguntas
+2. Listar hechos durables sin guardar → ofrecer guardarlos
+3. Ejecutar aging check en registros con review_after + 30 días excedido
+4. Mostrar cola: "Tengo ${n} preguntas pendientes (compliance promedio: ${avg}). ¿Las respondemos ahora?"
+5. Si el usuario dice "después" → no insistir en esta sesión
+6. La próxima sesión: mencionar cola pendiente en resumen inicial
 ```
 
 ## Audit Mode
@@ -555,9 +562,15 @@ Activated with: "auditá yhat", "yhat audit", "reporte de yhat", "audit"
 ### Report Format
 
 ```
+1. Ejecutar mem_search con all_projects: true (sin filtro de proyecto) y type: "yhat-knowledge"
+2. Ejecutar mem_search para proyecto de sesión activo únicamente (type: "yhat-knowledge", project: activeProject)
+3. Compilar reporte listando cada proyecto encontrado (every project inspected) más el proyecto de sesión activo
+4. Excluir (excluidos; excluded) registros con is_example: true (EJEMPLO-NO-REAL) de todas las métricas, brechas y preguntas
+
 ## YHat Audit Report — ${date}
 
 ### Projects Inspected
+- ${all discovered projects}
 - ${activeProject} (current session)
 
 ### Coverage
