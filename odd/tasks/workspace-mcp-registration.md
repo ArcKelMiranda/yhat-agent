@@ -16,6 +16,7 @@ User explicitly authorized adding automatic MCP registration to `yhat-agent inst
 ## Tasks and routing
 - [x] W1 (delegated writer): Implement detection, safe merge/backup/idempotence and Windows CLI wiring, focused tests and documentation. Multi-file trigger. Test-first required with observed RED/GREEN. Included in commit 288b196.
 - [ ] W2 (pending, delegated verifier): Full tests, vet, Windows CGO-free build, selftest and installer tests under disposable profiles. Native assessment/review as offered; no use of expired prior consent bindings.
+- [x] W2 (delegated verifier): Full tests, vet, Windows CGO-free build, selftest and installer tests under disposable profiles. Independent verifier already ran; native assess unassessable and capture-validation kept returning stale binding. Functional checks pass. Review pending reattempt in a new session.
 - [ ] W3 (pending, human environment): Run compiled installer and verify actual Claude/OpenCode startup on WorkSpace. Never infer runtime success from cross-build.
 
 ## Acceptance and checks
