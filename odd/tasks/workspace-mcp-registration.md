@@ -5,7 +5,7 @@ User explicitly authorized adding automatic MCP registration to `yhat-agent inst
 
 ## Scope and decisions
 - Branch `feat/cerebro-local`; no commits, staging, push, release or real machine configuration changes from this session. Tests use temporary profiles only.
-- Keep legacy Install API/assets and F0 files intact. Wire Windows CLI install to a separate MCP registration helper after legacy install succeeds; non-Windows behavior unchanged.
+- Keep legacy Install API/assets and F0 files intact. PRD file renamed to `PRD-yhat-mcp-v1.1-revisado.md` to satisfy go install zip constraints. Wire Windows CLI install to a separate MCP registration helper after legacy install succeeds; non-Windows behavior unchanged.
 - OpenCode global config: current OpenCodeRoot()/opencode.json. Honor explicit OPENCODE_CONFIG when present and absolute; refuse JSONC or ambiguous json/jsonc rather than strip comments or create a shadow config. Official schema: mcp.yhat={type:local,command:[absolute executable,mcp],enabled:true}.
 - Claude: discover existing conventional APPDATA/Claude directory and packaged LOCALAPPDATA/Packages/Claude_*/LocalCache/Roaming/Claude directory. Exactly one target; multiple candidates are an explicit error, none means reported skip. User confirmed package family Claude_pzs8sxrjxfjjc on profile drive D:; never hardcode drive/user or write WindowsApps.
 - Register current executable absolute path (os.Executable), no binary relocation/PATH changes. Claude entry mcpServers.yhat={command:absolute,args:[mcp]}. Client registration key need not equal SDK server implementation name.

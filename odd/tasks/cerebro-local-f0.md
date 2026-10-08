@@ -1,7 +1,7 @@
 # Cerebro local F0 prototype
 
 ## Objective and authorization
-User authorized diagnostic F0 for Cerebro YHat v1.2, recorded in `PRD — yhat-mcp v1.1 (revisado).md`. Branch: `feat/cerebro-local`. No commits, staging, push or production installation authorized.
+User authorized diagnostic F0 for Cerebro YHat v1.2, recorded in `PRD-yhat-mcp-v1.1-revisado.md`. Branch: `feat/cerebro-local`. No commits, staging, push or production installation authorized.
 
 ## Scope
 Single binary with `mcp` (one read-only diagnostic fts5_search tool, three synthetic in-memory fixtures) and `mcp --selftest` (real subprocess SDK initialize/list/call; politica must find exact Política Fixture Beta). No production persistence, capture, approval, inbox, sharing, installer migration or self-update. Docs: `docs/cerebro-f0.md`. Source committed in 288b196 and downstream commits.
