@@ -9,6 +9,16 @@ import (
 	yhatagent "github.com/ArcKelMiranda/yhat-agent"
 )
 
+// mcpUsageNote is appended to the help text to document the experimental mcp command.
+const mcpUsageNote = `
+MCP (experimental F0 prototype):
+  yhat-agent mcp              Run MCP stdio server
+  yhat-agent mcp --selftest  Run self-test and emit JSON diagnostic
+
+  WARNING: This is a diagnostic prototype (F0). Data is synthetic and ephemeral.
+  No production features are enabled. Do not use for real tasks.
+`
+
 func main() {
 	if len(os.Args) < 2 {
 		printUsage()
@@ -26,6 +36,9 @@ func main() {
 		runUpdate()
 	case "uninstall":
 		runUninstall()
+	case "mcp":
+		exitCode := runMCPCommand(os.Args[2:])
+		os.Exit(exitCode)
 	case "version", "--version", "-v":
 		runVersion()
 	case "help", "--help", "-h":
@@ -48,6 +61,7 @@ Commands:
   status     Report installation state without making changes
   update     Download and verify latest release from GitHub (use --check to verify without downloading)
   uninstall  Remove managed files (requires --yes)
+  mcp        Run MCP stdio server (experimental F0 prototype)
   version    Show version and build information
   help       Show this help message
 
@@ -55,13 +69,19 @@ Options:
   --yes      Required for uninstall to confirm destructive action
   --json     Output status in JSON format
   --dry-run  Show what would be done without making changes (uninstall only)
-`)
+` + mcpUsageNote)
 }
 
 func runInstall() {
 	results, err := yhatagent.Install()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "install failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Register MCP servers (Windows only; no-op on other platforms).
+	if err := runInstallMCP(); err != nil {
+		fmt.Fprintf(os.Stderr, "MCP registration failed (legacy assets may already be installed): %v\n", err)
 		os.Exit(1)
 	}
 

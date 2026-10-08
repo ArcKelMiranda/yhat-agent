@@ -255,7 +255,7 @@ The agent maintains an enrichment queue as YHat knowledge is captured:
 
 Every question list must:
 - Contain the first question exactly: `¿Existe documentación oficial viva (SharePoint, wiki, esquema versionado) que valide este dominio?`
-- Have at most five questions, one line each
+- Have at most five questions (max five), one line each
 - Include the record identifier (topic_key)
 - Keep 14-day aging requirement for stale questions
 - Top N examples must have exactly N items (no truncation, no padding)
@@ -400,11 +400,14 @@ When user states a rule, decision, mapping, definition, exception, or corrects d
 ```
 1. Run hygiene gate before save
 2. Search yhat-knowledge for duplicates/contradictions
-3. Call mem_save in the same turn, no waiting
-4. One record per atomic fact (e.g., one FA↔Office mapping per entry)
-5. After save → one-line confirmation max: "Guardado: yhat.map.codes.fa-office"
-6. NO questions
-7. If fact is ambiguous → save as yhat.assum.* with low confidence, add to queue
+3. Obtain UTC capture timestamp from shell and use that exact output for `captured_at` in the record — do NOT invent the time in the model
+   - PowerShell: `[DateTime]::UtcNow.ToString("o")`
+   - bash: `date -u +%Y-%m-%dT%H:%M:%SZ`
+4. Call mem_save in the same turn, no waiting
+5. One record per atomic fact (e.g., one FA↔Office mapping per entry)
+6. After save → one-line confirmation max: "Guardado: yhat.map.codes.fa-office"
+7. NO questions
+8. If fact is ambiguous → save as yhat.assum.* with low confidence, add to queue
 ```
 
 ### Phase 3: Enrichment Queue (BACKGROUND, non-blocking)
@@ -422,6 +425,7 @@ When user states a rule, decision, mapping, definition, exception, or corrects d
 Rule: Do NOT ask questions while user is working. ONLY ask at:
 
 **a) Natural pause**: User says "listo", "gracias", "eso es todo", or clearly changes topic
+→ Before offering questions, run a read-only sweep for durable facts not yet captured and pending enrichment questions
 → Offer ONCE: "Tengo N preguntas para completar lo que capturé. ¿Las vemos ahora o las dejo para después?"
 
 **b) Explicit request**: User says "enriquecé", "qué te falta", "hacéme preguntas", "revisá rápido"
@@ -455,10 +459,11 @@ Respondé "skip" para las que no puedas responder ahora.
 ### Phase 5: Session Close
 
 ```
-1. List durable facts left unsaved (if any) → offer to save
-2. Show enrichment queue count → offer to answer now or leave for next session
-3. Mention pending questions in next session initial summary
-4. Run aging check on records past review_after + 30 days
+1. Run a read-only sweep for durable facts not yet captured and pending enrichment questions
+2. List durable facts left unsaved (if any) → offer to save
+3. Show enrichment queue count → offer to answer now or leave for next session
+4. Mention pending questions in next session initial summary
+5. Run aging check on records past review_after + 30 days
 ```
 
 ### Phase 6: Audit Mode (ACTIVATED with "auditá yhat" or similar)
@@ -466,9 +471,15 @@ Respondé "skip" para las que no puedas responder ahora.
 Generate read-only report (do NOT modify records without confirmation):
 
 ```
+1. Run mem_search with all_projects: true (no project filter) and type: "yhat-knowledge"
+2. Run mem_search for active session project only (type: "yhat-knowledge", project: activeProject)
+3. Compile report listing every project found plus the active session project
+4. Exclude records with is_example: true (EJEMPLO-NO-REAL) from all metrics
+
 ## YHat Audit Report — {date}
 
 ### Projects Inspected
+- {all discovered projects}
 - {activeProject} (current session)
 
 ### Coverage

@@ -6,5 +6,8 @@ yhat-agent_windows_*
 # Platform-specific candidate suffixes used by update command
 *.yhat-agent-new
 
+# Local sensitive content patterns (runtime config, never commit)
+.sensitive-content-patterns
+
 # Local Pi runtime state
 .atl/
