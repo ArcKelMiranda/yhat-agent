@@ -23,10 +23,10 @@ User explicitly authorized adding automatic MCP registration to `yhat-agent inst
 Preserve other servers/preferences, validate both Claude layouts, reject ambiguity/conflicts/malformed JSON/JSONC/symlinks, exact backup, repeat-install no-op, explicit executable path with spaces, non-Windows unchanged. Commands use PATH=/snap/go/current/bin:$PATH and CGO_ENABLED=0: focused tests, go test -count=1 ./..., go vet ./..., go run ./cmd/yhat-agent mcp --selftest, GOOS=windows GOARCH=amd64 go build to /tmp/yhat-workspace/yhat-agent.exe, git diff --check.
 
 ## Delivery
-Forecast 400–600 authored lines for one coherent installer unit with tests/docs; advisory only, no minifying or omitted tests. Strategy ask-on-risk before any eventual oversized commit/PR, none authorized. Commit identities pending permission. Existing F0 review and WorkSpace validation remain open; prior native attempts created no lineage.
+Forecast 400–600 authored lines for one coherent installer unit with tests/docs; advisory only, no minifying or omitted tests. Strategy ask-on-risk before any eventual oversized commit/PR, none authorized. Commits landed on feat/cerebro-local. Existing F0 review and WorkSpace validation remain open; prior native attempts created no lineage.
 
 ## Progress
-Exploration complete; OpenCode format verified at https://opencode.ai/docs/mcp-servers/ and /docs/config/. User confirmed actual packaged Claude path. No installer source changed yet.
+Exploration complete; OpenCode format verified at https://opencode.ai/docs/mcp-servers/ and /docs/config/. User confirmed actual packaged Claude path. Source committed in 288b196 and downstream commits.
 
 ## Review progress
 Native review (lineage review-a921ac9aaf9b4d74) ran all four lenses and closed with `correction_required` and two candidate-caused findings:

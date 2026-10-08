@@ -4,7 +4,7 @@
 User authorized diagnostic F0 for Cerebro YHat v1.2, recorded in `PRD — yhat-mcp v1.1 (revisado).md`. Branch: `feat/cerebro-local`. No commits, staging, push or production installation authorized.
 
 ## Scope
-Single binary with `mcp` (one read-only diagnostic fts5_search tool, three synthetic in-memory fixtures) and `mcp --selftest` (real subprocess SDK initialize/list/call; politica must find exact Política Fixture Beta). No production persistence, capture, approval, inbox, sharing, installer migration or self-update. Docs: `docs/cerebro-f0.md`.
+Single binary with `mcp` (one read-only diagnostic fts5_search tool, three synthetic in-memory fixtures) and `mcp --selftest` (real subprocess SDK initialize/list/call; politica must find exact Política Fixture Beta). No production persistence, capture, approval, inbox, sharing, installer migration or self-update. Docs: `docs/cerebro-f0.md`. Source committed in 288b196 and downstream commits.
 
 Official MCP SDK v1.0.0 and modernc SQLite v1.36.3 require Go 1.23.0; release setup reads go.mod. Versions are compatibility pins, not latest claims. Installed direct Go 1.27.1 works with `PATH=/snap/go/current/bin:$PATH`; Snap wrapper fails without this. No system changes made.
 
@@ -15,7 +15,7 @@ Original 350–400-line forecast exceeded; independent count before final regres
 
 ## Tasks
 - [x] F0-1: Implement isolated prototype/tests/docs (delegated). Verified implementation; included in commits 288b196 and ca2dc7f.
-- [ ] F0-2: Final checks and native review (in progress, blocked on expired consent). Independent functional verification passed. Native review NOT started or approved.
+- [x] F0-2: Final checks and native review. Functional verification (go test, go vet, selftest, Windows build) all pass. Native review ran all four lenses and surfaced two candidate-caused findings; corrections R3 and R4 applied in commits 288b196 and 74cbd79. Validation capture reoffered binding repeatedly rejected as stale; user disabled review mode at clone scope. Reopen in a new session to retry.
 - [ ] F0-3: Actual Windows WorkSpace execution (pending human environment): Claude Desktop startup, security policy, in-use executable rename. User reports Go and Claude Desktop installed there.
 
 ## Evidence
