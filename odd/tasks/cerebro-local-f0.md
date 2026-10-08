@@ -14,7 +14,7 @@ Preserve initial `.gitignore`, both capture assets, root `yhat-agent_test.go`, P
 Original 350–400-line forecast exceeded; independent count before final regressions was 1227 new Go lines plus 54 doc lines. Native candidate includes pre-existing tracked changes: 13 paths, 2141 changed lines. Strategy ask-on-risk before any eventual oversized commit/PR. No commits authorized; commit identities pending. Never remove useful tests merely to shrink count.
 
 ## Tasks
-- [x] F0-1: Implement isolated prototype/tests/docs (delegated). Verified implementation; no work-unit commit due to lack of authorization.
+- [x] F0-1: Implement isolated prototype/tests/docs (delegated). Verified implementation; included in commits 288b196 and ca2dc7f.
 - [ ] F0-2: Final checks and native review (in progress, blocked on expired consent). Independent functional verification passed. Native review NOT started or approved.
 - [ ] F0-3: Actual Windows WorkSpace execution (pending human environment): Claude Desktop startup, security policy, in-use executable rename. User reports Go and Claude Desktop installed there.
 
