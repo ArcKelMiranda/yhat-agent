@@ -35,4 +35,12 @@ No current functional failures reported. No Windows runtime or performance bench
 INSPECT included exactly five intended untracked prototype source/test/doc paths; PRD, PROJECT-SUMMARY, task document and root binary excluded. Two consent attempts returned consent-binding-expired; the second followed explicit user choice granted, but native rejected it as expired. Both returned lineage_created=false, mutation_performed=false, native_invocation_attempted=false. No review lineage exists from these attempts. Do not replay expired binding or claim approval; fresh START requires fresh consent. User approval is recorded but cannot substitute for a valid provider binding.
 
 ## Next step
-Resume native review with fresh inspect/START and fresh consent when user is ready; do not repeatedly prompt in this turn. Then test the binary in the actual WorkSpace using docs/cerebro-f0.md. F0 remains partial until Windows checks. No F1 behavior, deployment or release claimed.
+
+F0 closed end-to-end on the user WorkSpace. Tag `v0.2.0-f0` published
+on `main`. See `odd/tasks/cerebro-yhat-v12-roadmap.md` for the F1
+scope and the 7 PRD open questions that still block F2/F3.
+
+Native review lineage `review-a921ac9aaf9b4d74` remains
+`correction_required` with stale reoffered binding; user disabled
+review mode at clone scope. Reopen in a new session to retry or
+start a fresh START for F1.
