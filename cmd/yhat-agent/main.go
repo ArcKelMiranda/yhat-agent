@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	yhatagent "github.com/ArcKelMiranda/yhat-agent"
+	"github.com/ArcKelMiranda/yhat-agent/internal/bandeja"
 	"github.com/ArcKelMiranda/yhat-agent/internal/config"
 	"github.com/ArcKelMiranda/yhat-agent/internal/store"
 )
@@ -31,6 +33,8 @@ func main() {
 	cmd := os.Args[1]
 
 	switch cmd {
+	case "bandeja":
+		runBandeja()
 	case "install":
 		runInstall()
 	case "status":
@@ -64,14 +68,16 @@ Commands:
   status     Report installation state without making changes
   update     Download and verify latest release from GitHub (use --check to verify without downloading)
   uninstall  Remove managed files (requires --yes)
+  bandeja    Open the local approval inbox in your browser
   mcp        Run MCP stdio server (experimental F0 prototype)
   version    Show version and build information
   help       Show this help message
 
 Options:
-  --yes      Required for uninstall to confirm destructive action
-  --json     Output status in JSON format
-  --dry-run  Show what would be done without making changes (uninstall only)
+  --yes        Required for uninstall to confirm destructive action
+  --json       Output status in JSON format
+  --dry-run    Show what would be done without making changes (uninstall only)
+  --no-bandeja Skip opening bandeja after install (install command only)
 ` + mcpUsageNote)
 }
 
@@ -101,6 +107,14 @@ func runInstall() {
 			fmt.Printf("  ✓ %s: %s (%s)\n", r.AssetKey, state, r.Message)
 		} else {
 			fmt.Printf("  ⚠ %s: %s (%s)\n", r.AssetKey, state, r.Message)
+		}
+	}
+
+	// F1-D: offer to open bandeja unless --no-bandeja is set.
+	if !hasFlag("--no-bandeja") {
+		fmt.Println("\nOpening Bandeja YHat...")
+		if err := runBandejaPrompt(); err != nil {
+			fmt.Fprintf(os.Stderr, "bandeja: %v\n", err)
 		}
 	}
 }
@@ -507,5 +521,70 @@ func runInstallF1() error {
 	}
 	_ = st_.Close()
 
+	return nil
+}
+
+// runBandeja is the entry point for the bandeja subcommand.
+// It opens the HTTP server and the browser, blocking until the user
+// presses Ctrl+C or 15 minutes of idle time elapse.
+func runBandeja() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	s, err := store.Open(config.DBPath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "bandeja: open store: %v\n", err)
+		os.Exit(1)
+	}
+	defer s.Close()
+
+	srv, err := bandeja.Start(ctx, s)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "bandeja: start server: %v\n", err)
+		os.Exit(1)
+	}
+	defer srv.Close()
+
+	fmt.Println(srv.URL())
+
+	// Try to open the browser; skip silently if tool is unavailable.
+	bandeja.OpenBrowser(srv.URL())
+
+	fmt.Println("\nPresiona Ctrl+C para detener el servidor.")
+
+	srv.Wait()
+}
+
+// runBandejaPrompt is called after install to offer to open bandeja.
+// It starts the server, prints the URL, tries to open the browser,
+// and blocks until Ctrl+C.
+func runBandejaPrompt() error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	s, err := store.Open(config.DBPath())
+	if err != nil {
+		return fmt.Errorf("open store: %w", err)
+	}
+	defer s.Close()
+
+	srv, err := bandeja.Start(ctx, s)
+	if err != nil {
+		return fmt.Errorf("start server: %w", err)
+	}
+	defer srv.Close()
+
+	fmt.Printf("Abre en tu navegador: %s\n", srv.URL())
+	fmt.Println("Presiona Ctrl+C para cerrar la Bandeja.")
+
+	// Wait in a goroutine so runInstall can return; the process lives
+	// in the terminal. After 15 min idle, idleShutdown closes srv.
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.Wait()
+	}()
+
+	// Give the browser a moment to launch.
+	time.Sleep(500 * time.Millisecond)
 	return nil
 }

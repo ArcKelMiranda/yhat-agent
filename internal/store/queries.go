@@ -140,6 +140,35 @@ func (s *Store) StoreDB() *sql.DB {
 	return s.db
 }
 
+// ListByShareStatus returns local memories whose share_status is not 'none',
+// or all local memories that are validated/rejected/archived (the Enviados set).
+// Ordered by created_at descending (most recent first).
+func (s *Store) ListByShareStatus(ctx context.Context) ([]Memory, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, origin, type, title, content, context, content_hash, author,
+		       status, validated_by, validated_at, reject_reason,
+		       share_status, shared_at, remote_id, team_status, team_updated_at,
+		       is_example, created_at, updated_at
+		FROM memories
+		WHERE origin='local' AND status IN ('validated','rejected','archived')
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []Memory
+	for rows.Next() {
+		mem, err := scanMemoryRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, mem)
+	}
+	return items, rows.Err()
+}
+
 // scanMemoryRow scans a memories row into a Memory struct.
 // This is a copy of the private helper from store.go, scoped to this file.
 func scanMemoryRow(rows *sql.Rows) (Memory, error) {
