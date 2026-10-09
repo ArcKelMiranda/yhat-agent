@@ -1744,7 +1744,7 @@ func TestSubprocess_F1_DBNotInitialized_ProposeError(t *testing.T) {
 	}
 	defer session.Close()
 
-	_, err = session.CallTool(ctx, &mcp.CallToolParams{
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
 		Name: "propose_memory",
 		Arguments: map[string]any{
 			"type":    "decision",
@@ -1752,12 +1752,12 @@ func TestSubprocess_F1_DBNotInitialized_ProposeError(t *testing.T) {
 			"content": "Contenido.",
 		},
 	})
-	// The SDK should surface IsError=true rather than returning an error.
-	// This is the normal MCP response; we check for the IsError flag.
-	// The session.CallTool returns nil err but sets IsError.
-	// If err is non-nil, the tool invocation completely failed (schema error etc).
-	// Either way the test verifies the tool is reachable.
-	_ = err // err may be nil; we check IsError in the result below (not applicable here since CallTool returns err)
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if !res.IsError {
+		t.Errorf("propose_memory: want IsError=true on missing DB, got false (content=%v)", res.Content)
+	}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -38,8 +38,9 @@ import (
 // nil means not-yet-attempted; a *Store is set after the first successful open.
 var mcpStore *store.Store
 
-// mcpStorePath is the resolved store path used for the current mcpStore.
-var mcpStorePath string
+// mcpStorePath removed: never read by production code, only written
+// during the test reset path. Use defaultStorePath() if a path is
+// needed.
 
 // resetMCPStore is for testing only: closes and nil-out the cached store so each
 // test gets a fresh store for its own temp directory.
@@ -47,7 +48,6 @@ func resetMCPStore() {
 	if mcpStore != nil {
 		mcpStore.Close()
 		mcpStore = nil
-		mcpStorePath = ""
 	}
 }
 
@@ -138,16 +138,7 @@ func ensureStore() error {
 		return fmt.Errorf("ensure fts5: %w", ftsErr)
 	}
 	mcpStore = s
-	mcpStorePath = path
 	return nil
-}
-
-// dbExists returns true if the default store DB file exists.
-// Used by tools that need to distinguish "DB not initialized" from "DB empty".
-func dbExists() bool {
-	path := defaultStorePath()
-	_, err := os.Stat(path)
-	return err == nil
 }
 
 // isStoreEmpty returns true if the memories table has zero rows.
