@@ -188,6 +188,48 @@ that writes `config.yaml` from the operator's Windows identity.
   the user gives the go-ahead.
 - No push without explicit user consent.
 
+## Final state of F1
+
+- All five sub-tasks A through E landed on `feat/cerebro-f1`
+  and merged into `main` as commit `b007ad2`. The merge is
+  a `ort` strategy `--no-ff` with an explicit merge commit.
+- Tag `v0.3.0-f1` points to the pre-merge F1 tip
+  (`038011d`); F0 is still tagged as `v0.2.0-f0`.
+- F1-F is the manual WorkSpace regression runbook and lives
+  in `odd/tasks/cerebro-f1f.md`. It is not code; the user
+  runs the 8 tests in the WorkSpace and reports back.
+- The `go install` path for the user is
+  `go install github.com/ArcKelMiranda/yhat-agent/cmd/yhat-agent@v0.3.0-f1`
+  (or `@main` after the merge is in place; both resolve to
+  the same binary now).
+
+## Acceptance summary for the F1 sub-task set
+
+- F0 baseline: `mcp --selftest` returns the expected
+  Política Fixture Beta fixture on every commit. F0 OpenCode
+  and packaged Claude Desktop registrations are preserved
+  untouched.
+- BR1, BR3, BR5, BR7, BR9, BR11: enforced in
+  `internal/store/store.go`, with named tests in
+  `internal/store/store_test.go`.
+- BR13: enforced in `internal/sensitive/sensitive.go`,
+  called from `cmd/yhat-agent/mcp.go` before
+  `store.ProposeMemory`. Masking in the model-facing
+  response uses `4+****+4` (max 12 visible chars, 40-byte
+  cap).
+- F1 tools: `propose_memory`, `list_pending`, `get_memory`,
+  `search_brain` registered in `cmd/yhat-agent/mcp.go` and
+  covered by 17+ mcp tests.
+- F1-C install: writes `config.yaml` (with `%USERNAME` on
+  Windows), `state.json`, and creates the SQLite DB at
+  `%USERPROFILE%\.yhat\yhat.db`. Operator identity precedence
+  documented in code.
+- F1-D bandeja: HTTP server on `127.0.0.1:0` with one-shot
+  32-byte token, Spanish HTML page with Pendientes and
+  Enviados sections, 15 min idle shutdown. 26 bandeja tests
+  + 3 integration tests. Operator can disable the
+  auto-open with `--no-bandeja`.
+
 ## Out of scope
 
 - F2 share, upload queue drain, sync, central API.
