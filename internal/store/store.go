@@ -723,3 +723,32 @@ func (s *Store) SetSyncState(ctx context.Context, key, value string) error {
 	)
 	return err
 }
+
+// CountMemoriesByStatus returns the number of local memories for each status.
+// The returned map is keyed by StatusProposed, StatusValidated, StatusRejected,
+// StatusArchived.
+func (s *Store) CountMemoriesByStatus(ctx context.Context) (map[string]int, error) {
+	counts := make(map[string]int)
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT status, COUNT(*) FROM memories WHERE origin='local' GROUP BY status`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("CountMemoriesByStatus: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, fmt.Errorf("scan count row: %w", err)
+		}
+		counts[status] = count
+	}
+	// Ensure all keys are present even when count is zero.
+	for _, s := range []string{StatusProposed, StatusValidated, StatusRejected, StatusArchived} {
+		if _, ok := counts[s]; !ok {
+			counts[s] = 0
+		}
+	}
+	return counts, rows.Err()
+}
