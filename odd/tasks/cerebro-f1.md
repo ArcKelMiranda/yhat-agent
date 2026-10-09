@@ -51,11 +51,15 @@ that writes `config.yaml` from the operator's Windows identity.
   Spanish.
 
 ### F1-B. Real MCP tools (~1.5 days)
-- [ ] F1-B implementation in progress; authorization widened to
-  include `internal/store/queries.go` and `internal/store/store.go`
-  for FTS5 helpers and accessor methods only. The store package
-  remains the source of truth for SQL; the MCP tool layer
-  consumes typed methods and never reaches into private fields.
+- [x] F1-B landed on `feat/cerebro-f1` as commits `52df538`
+  (tools + queries) and `2c17cf3` (dead-code cleanup and
+  tightened subprocess DB check). Windows build SHA-256
+  `f49493aff03b555b8ca713eb0805fe7ba674aacf2d56171903812f2e8c618a9a`.
+- Authorization widened to include `internal/store/queries.go`
+  and `internal/store/store.go` for FTS5 helpers and accessor
+  methods only. The store package remains the source of truth
+  for SQL; the MCP tool layer consumes typed methods and never
+  reaches into private fields.
 - `propose_memory` accepts `{type, title, content, context?}` and
   returns the saved record or the BR7/BR13/BL-side rejection
   detail. Sensitive-content matches return `IsError: true` with
