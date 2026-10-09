@@ -1,12 +1,17 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	yhatagent "github.com/ArcKelMiranda/yhat-agent"
+	"github.com/ArcKelMiranda/yhat-agent/internal/bandeja"
+	"github.com/ArcKelMiranda/yhat-agent/internal/config"
+	"github.com/ArcKelMiranda/yhat-agent/internal/store"
 )
 
 // mcpUsageNote is appended to the help text to document the experimental mcp command.
@@ -28,6 +33,8 @@ func main() {
 	cmd := os.Args[1]
 
 	switch cmd {
+	case "bandeja":
+		runBandeja()
 	case "install":
 		runInstall()
 	case "status":
@@ -61,14 +68,16 @@ Commands:
   status     Report installation state without making changes
   update     Download and verify latest release from GitHub (use --check to verify without downloading)
   uninstall  Remove managed files (requires --yes)
+  bandeja    Open the local approval inbox in your browser
   mcp        Run MCP stdio server (experimental F0 prototype)
   version    Show version and build information
   help       Show this help message
 
 Options:
-  --yes      Required for uninstall to confirm destructive action
-  --json     Output status in JSON format
-  --dry-run  Show what would be done without making changes (uninstall only)
+  --yes        Required for uninstall to confirm destructive action
+  --json       Output status in JSON format
+  --dry-run    Show what would be done without making changes (uninstall only)
+  --no-bandeja Skip opening bandeja after install (install command only)
 ` + mcpUsageNote)
 }
 
@@ -85,6 +94,12 @@ func runInstall() {
 		os.Exit(1)
 	}
 
+	// F1-C: write Cerebro config, state, and migrate the store.
+	if err := runInstallF1(); err != nil {
+		fmt.Fprintf(os.Stderr, "cerebro init failed: %v\n", err)
+		os.Exit(1)
+	}
+
 	fmt.Println("Installation complete:")
 	for _, r := range results {
 		state := r.State.String()
@@ -92,6 +107,14 @@ func runInstall() {
 			fmt.Printf("  ✓ %s: %s (%s)\n", r.AssetKey, state, r.Message)
 		} else {
 			fmt.Printf("  ⚠ %s: %s (%s)\n", r.AssetKey, state, r.Message)
+		}
+	}
+
+	// F1-D: offer to open bandeja unless --no-bandeja is set.
+	if !hasFlag("--no-bandeja") {
+		fmt.Println("\nOpening Bandeja YHat...")
+		if err := runBandejaPrompt(); err != nil {
+			fmt.Fprintf(os.Stderr, "bandeja: %v\n", err)
 		}
 	}
 }
@@ -112,8 +135,20 @@ func runStatus() {
 		os.Exit(1)
 	}
 
+	// F1-C: read Cerebro config and state; open store to count memories.
+	cerebro := runStatusCerebro(useJSON)
+
 	if useJSON {
-		data, _ := json.MarshalIndent(result, "", "  ")
+		cerebroStatus := make(map[string]interface{})
+		cerebroStatus["config_home"] = yhatagent.ConfigHome()
+		cerebroStatus["opencode_root"] = yhatagent.OpenCodeRoot()
+		cerebroStatus["manifest_path"] = result.ManifestPath
+		cerebroStatus["has_manifest"] = result.HasManifest
+		cerebroStatus["files"] = result.Files
+		cerebroStatus["candidates"] = result.Candidates
+		cerebroStatus["has_candidate"] = result.HasCandidate
+		cerebroStatus["cerebro"] = cerebro
+		data, _ := json.MarshalIndent(cerebroStatus, "", "  ")
 		fmt.Println(string(data))
 		return
 	}
@@ -143,10 +178,12 @@ func runStatus() {
 		case yhatagent.StateUnknown:
 			icon = "?"
 		}
-		// Extract human-readable name from asset key (e.g., "yhat-memory-capture.md")
 		displayName := filepath.Base(f.AssetKey)
 		fmt.Printf("    %s %s: %s (%s)\n", icon, displayName, f.State.String(), f.Message)
 	}
+
+	// F1-C Cerebro section.
+	runStatusCerebroText(cerebro)
 }
 
 func runUpdate() {
@@ -315,4 +352,239 @@ func boolStr(b bool) string {
 		return "yes"
 	}
 	return "no"
+}
+
+// cerebroStatus holds the F1-C Cerebro data read by runStatus.
+type cerebroStatus struct {
+	HomePath    string
+	DBPath      string
+	DBExists    bool
+	SchemaVer   int
+	Counts      map[string]int
+	Operator    string
+	LastSync    string
+	ConfigError string
+	StateError  string
+	StoreError  string
+}
+
+// runStatusCerebro reads the Cerebro config, state, and store counts.
+// It populates all fields even when individual reads fail (partial output).
+func runStatusCerebro(useJSON bool) cerebroStatus {
+	cs := cerebroStatus{
+		HomePath:  config.DefaultHome(),
+		DBPath:    config.DBPath(),
+		SchemaVer: store.CurrentSchemaVersion,
+		Counts:    map[string]int{},
+	}
+
+	// Read config.yaml.
+	cfg, err := config.Load(config.ConfigPath())
+	if err != nil {
+		cs.ConfigError = err.Error()
+	} else {
+		cs.Operator = cfg.Operator
+		cs.LastSync = cfg.LastSync
+		if cs.LastSync == "" {
+			cs.LastSync = "never"
+		}
+	}
+
+	// Read state.json (for schema version override if present).
+	st, err := config.LoadState(config.StatePath())
+	if err != nil {
+		cs.StateError = err.Error()
+	} else {
+		cs.SchemaVer = st.SchemaVersion
+	}
+
+	// Count memories.
+	if _, err := os.Stat(cs.DBPath); os.IsNotExist(err) {
+		cs.DBExists = false
+		cs.Counts = map[string]int{
+			"proposed":  0,
+			"validated": 0,
+			"rejected":  0,
+			"archived":  0,
+		}
+	} else {
+		cs.DBExists = true
+		st_, err := store.Open(cs.DBPath)
+		if err != nil {
+			cs.StoreError = err.Error()
+			cs.Counts = map[string]int{
+				"proposed":  0,
+				"validated": 0,
+				"rejected":  0,
+				"archived":  0,
+			}
+		} else {
+			counts, err := st_.CountMemoriesByStatus(context.Background())
+			_ = st_.Close()
+			if err != nil {
+				cs.StoreError = err.Error()
+				cs.Counts = map[string]int{
+					"proposed":  0,
+					"validated": 0,
+					"rejected":  0,
+					"archived":  0,
+				}
+			} else {
+				cs.Counts = counts
+			}
+		}
+	}
+
+	return cs
+}
+
+// runStatusCerebroText prints the Cerebro section for text output.
+func runStatusCerebroText(cs cerebroStatus) {
+	fmt.Printf("\n  Cerebro:")
+	fmt.Printf("\n    YHat home: %s", cs.HomePath)
+
+	dbLabel := cs.DBPath
+	if !cs.DBExists {
+		dbLabel += " (not initialised)"
+	} else {
+		dbLabel += fmt.Sprintf(" (schema v%d)", cs.SchemaVer)
+	}
+	fmt.Printf("\n    DB:           %s", dbLabel)
+
+	proposed := cs.Counts["proposed"]
+	validated := cs.Counts["validated"]
+	rejected := cs.Counts["rejected"]
+	archived := cs.Counts["archived"]
+	total := proposed + validated + rejected + archived
+	fmt.Printf("\n    Memories:     %d (%d proposed, %d validated, %d rejected, %d archived)",
+		total, proposed, validated, rejected, archived)
+
+	op := cs.Operator
+	if op == "" && cs.ConfigError != "" {
+		op = "?"
+	}
+	fmt.Printf("\n    Operator:     %s", op)
+
+	lastSync := cs.LastSync
+	if lastSync == "" {
+		lastSync = "never"
+	}
+	fmt.Printf("\n    Last sync:    %s\n", lastSync)
+}
+
+// runInstallF1 creates the F1 home directory, writes config.yaml and state.json,
+// and opens the store to apply migrations.
+func runInstallF1() error {
+	homeDir := config.DefaultHome()
+	if err := config.EnsureDir(homeDir); err != nil {
+		return fmt.Errorf("ensure yhat home dir: %w", err)
+	}
+
+	// Determine operator name from the environment.
+	operator := os.Getenv("USERNAME")
+	if operator == "" {
+		operator = os.Getenv("USER")
+	}
+	if operator == "" {
+		operator = "unknown"
+	}
+
+	// Central repo URL: use env override or placeholder.
+	centralRepo := os.Getenv("YHAT_CENTRAL_URL")
+	if centralRepo == "" {
+		centralRepo = "https://centro.example.invalid"
+	}
+
+	cfg := config.Config{
+		Operator:    operator,
+		CentralRepo: centralRepo,
+		LastSync:    "",
+	}
+	if err := cfg.Save(config.ConfigPath()); err != nil {
+		return fmt.Errorf("write config.yaml: %w", err)
+	}
+
+	st := config.State{
+		Version:           yhatagent.Version,
+		RegisteredClients: []string{"opencode", "claude"},
+		SchemaVersion:     store.CurrentSchemaVersion,
+		LastSync:          "",
+	}
+	if err := st.Save(config.StatePath()); err != nil {
+		return fmt.Errorf("write state.json: %w", err)
+	}
+
+	// Open the store to apply migrations; close immediately.
+	st_, err := store.Open(config.DBPath())
+	if err != nil {
+		return fmt.Errorf("open yhat.db: %w", err)
+	}
+	_ = st_.Close()
+
+	return nil
+}
+
+// runBandeja is the entry point for the bandeja subcommand.
+// It opens the HTTP server and the browser, blocking until the user
+// presses Ctrl+C or 15 minutes of idle time elapse.
+func runBandeja() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	s, err := store.Open(config.DBPath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "bandeja: open store: %v\n", err)
+		os.Exit(1)
+	}
+	defer s.Close()
+
+	srv, err := bandeja.Start(ctx, s)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "bandeja: start server: %v\n", err)
+		os.Exit(1)
+	}
+	defer srv.Close()
+
+	fmt.Println(srv.URL())
+
+	// Try to open the browser; skip silently if tool is unavailable.
+	bandeja.OpenBrowser(srv.URL())
+
+	fmt.Println("\nPresiona Ctrl+C para detener el servidor.")
+
+	srv.Wait()
+}
+
+// runBandejaPrompt is called after install to offer to open bandeja.
+// It starts the server, prints the URL, tries to open the browser,
+// and blocks until Ctrl+C.
+func runBandejaPrompt() error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	s, err := store.Open(config.DBPath())
+	if err != nil {
+		return fmt.Errorf("open store: %w", err)
+	}
+	defer s.Close()
+
+	srv, err := bandeja.Start(ctx, s)
+	if err != nil {
+		return fmt.Errorf("start server: %w", err)
+	}
+	defer srv.Close()
+
+	fmt.Printf("Abre en tu navegador: %s\n", srv.URL())
+	fmt.Println("Presiona Ctrl+C para cerrar la Bandeja.")
+
+	// Wait in a goroutine so runInstall can return; the process lives
+	// in the terminal. After 15 min idle, idleShutdown closes srv.
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.Wait()
+	}()
+
+	// Give the browser a moment to launch.
+	time.Sleep(500 * time.Millisecond)
+	return nil
 }
