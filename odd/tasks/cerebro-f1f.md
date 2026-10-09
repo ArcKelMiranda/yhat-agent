@@ -151,6 +151,24 @@ The parent will capture the test results in an Engram
 observation and update `odd/tasks/cerebro-f1.md` with
 whether the F1 sub-task set is fully closed.
 
+## Install command for the user
+
+After the F1 merge into `main` and the tag `v0.3.0-f1` were
+pushed to `origin`, the user runs:
+
+```powershell
+go install github.com/ArcKelMiranda/yhat-agent/cmd/yhat-agent@v0.3.0-f1
+yhat-agent version
+yhat-agent install
+yhat-agent mcp --selftest
+yhat-agent bandeja
+```
+
+In Claude Desktop, after a restart, the user asks the
+operator-grade tasks from tests 3 to 7. Branch
+`feat/cerebro-f1` was deleted locally and remotely; the
+active branch is `main` at commit `201ca9e`.
+
 ## What this document does not cover
 
 - Performance benchmarks (the G1 200 ms latency requirement
