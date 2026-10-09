@@ -100,17 +100,11 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           EXT: ${{ matrix.ext }}
         run: |
-          # Build the output filename from the exact matrix values.
-          # This is safe because matrix values are controlled by the workflow definition,
-          # not by user input.
           output="yhat-agent_${GOOS}_${GOARCH}${EXT}"
           checksum_file="${output}.sha256sum"
 
           # Checksum format: lowercase <64-hex>  <two spaces> <filename> LF
-          # OpenSSL is available on all three OS runners (Ubuntu, macOS, Windows).
-          # Format matches SHA256SUMS: <hex>  <two spaces><filename>.
-          # sha256sum/shasum add an asterisk for binary mode; openssl does not.
-          # We parse the openssl output and reformat to match the spec exactly.
+          # OpenSSL is available on all three OS runners.
           checksum_hex=$(openssl dgst -sha256 -binary "${output}" | xxd -p | tr -d '\n')
           printf '%s  %s\n' "$checksum_hex" "${output}" > "${checksum_file}"
 
@@ -121,6 +115,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
+          # One artifact per platform; both the binary and its checksum are together.
           name: yhat-agent-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
             yhat-agent_${{ matrix.goos }}_${{ matrix.goarch }}${{ matrix.ext }}
@@ -182,11 +177,13 @@ jobs:
           fi
           echo "All artifacts verified successfully."
 
-  release:
-    needs: [validate-tag]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
+  # ── MSI build ──────────────────────────────────────────────────────────────
+  # Runs on Windows because WiX is a Windows-native tool.
+  # Depends on validate-tag so it uses the same approved tag.
+  # The MSI is built alongside the Go binary — both are needed at the same time.
+  build-msi:
+    needs: [validate-tag, build]
+    runs-on: windows-latest
     env:
       RELEASE_TAG: ${{ needs.validate-tag.outputs.tag }}
     steps:
@@ -200,38 +197,153 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build all platform binaries
+      - name: Download Windows amd64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: yhat-agent-windows-amd64
+          path: dist/
+
+      - name: Verify downloaded exe
         shell: bash
         run: |
-          platforms=(
-            "linux:amd64:"
-            "linux:arm64:"
-            "darwin:amd64:"
-            "darwin:arm64:"
-            "windows:amd64:.exe"
-          )
-          mkdir -p artifacts
-          for entry in "${platforms[@]}"; do
-            IFS=':' read -r goos goarch ext <<< "$entry"
-            output="yhat-agent_${goos}_${goarch}${ext}"
-            echo "Building $output..."
-            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
-              go build -ldflags="-s -w" -o "artifacts/$output" ./cmd/yhat-agent
+          ls -la dist/
+          if [ ! -f "dist/yhat-agent_windows_amd64.exe" ]; then
+            echo "ERROR: yhat-agent_windows_amd64.exe not found in dist/"
+            exit 1
+          fi
+          echo "Windows exe found: $(wc -c < dist/yhat-agent_windows_amd64.exe) bytes"
 
-            # Checksum: openssl is available on all runners
-            checksum_hex=$(openssl dgst -sha256 -binary "artifacts/$output" | xxd -p | tr -d '\n')
-            printf '%s  %s\n' "$checksum_hex" "$output" > "artifacts/$output.sha256sum"
-            echo "  Checksum: ${checksum_hex:0:16}..."
-          done
-          echo ""
-          echo "Artifacts built:"
-          ls -la artifacts/
-
-      - name: Create combined checksums file
+      - name: Compute MSI version from tag
+        id: msi-version
+        shell: bash
         run: |
-          cat artifacts/*.sha256sum > SHA256SUMS
-          echo "SHA256SUMS:"
-          cat SHA256SUMS
+          # RELEASE_TAG = v0.3.1  →  MSI_VERSION = 3.0.1.0
+          # MSI ProductVersion requires exactly 4 dot-separated octets.
+          # All v3.x releases share the same UpgradeCode, so the patch
+          # goes in the 3rd octet and the 4th is always 0.
+          MSI_VERSION="${RELEASE_TAG#v}"
+          MSI_VERSION="${MSI_VERSION}.0"
+          echo "msi-version=$MSI_VERSION" >> $GITHUB_OUTPUT
+          echo "MSI version: $MSI_VERSION"
+
+      - name: Download WiX 3.14
+        id: wix
+        shell: bash
+        run: |
+          # Check if WiX is already in PATH
+          if where.exe candle.exe >nul 2>&1; then
+            echo "WiX found in PATH"
+          else
+            WIX_DIR="$HOME/.wix"
+            if [ -d "$WIX_DIR" ] && [ -f "$WIX_DIR/candle.exe" ]; then
+              echo "WiX found in $WIX_DIR"
+            else
+              echo "Downloading WiX 3.14..."
+              curl -fsSL --retry 3 --retry-delay 5 \
+                -o "$env:TEMP/wix.zip" \
+                "https://github.com/wixtoolset/wix3/releases/download/wix3142rtm/wix314-binaries.zip"
+              mkdir -p "$WIX_DIR"
+              unzip -o "$env:TEMP/wix.zip" -d "$WIX_DIR"
+              echo "WiX extracted to $WIX_DIR"
+              echo "$WIX_DIR" >> $GITHUB_PATH
+            fi
+          fi
+          candle.exe -? | head -1
+
+      - name: Build MSI
+        shell: bash
+        env:
+          MSI_VERSION: ${{ steps.msi-version.outputs.msi-version }}
+        run: |
+          # YHAT_SOURCE_DIR must be a Windows absolute path for WiX.
+          SRC_ABS="$(pwd)/dist/yhat-agent_windows_amd64.exe"
+          SRC_ABS="${SRC_ABS//\//\\}"   # forward slash → backslash
+          echo "Source absolute path: $SRC_ABS"
+          echo "MSI version: $MSI_VERSION"
+
+          echo "Step 1/2 — candle.exe"
+          candle.exe \
+            -d"YHAT_VERSION=$MSI_VERSION" \
+            -d"YHAT_SOURCE_DIR=$SRC_ABS" \
+            -out "dist/yhat-agent.wixobj" \
+            "installer/yhat-agent.wxs"
+          if [ $? -ne 0 ]; then echo "ERROR: candle.exe failed"; exit 1; fi
+
+          echo "Step 2/2 — light.exe"
+          light.exe \
+            -ext WixUIExtension \
+            -out "dist/yhat-agent-${MSI_VERSION}-amd64.msi" \
+            "dist/yhat-agent.wixobj"
+          if [ $? -ne 0 ]; then echo "ERROR: light.exe failed"; exit 1; fi
+
+          echo ""
+          echo "MSI built:"
+          ls -lh "dist/yhat-agent-${MSI_VERSION}-amd64.msi"
+
+      - name: Upload MSI as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yhat-agent-msi
+          path: dist/yhat-agent-*.msi
+          retention-days: 30
+
+  # ── Release ────────────────────────────────────────────────────────────────
+  # Downloads all platform binaries and the MSI, then attaches everything
+  # to the GitHub draft release.
+  release:
+    needs: [validate-tag, build, build-msi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.validate-tag.outputs.tag }}
+    steps:
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: yhat-agent-*
+          path: artifacts/
+          merge-multiple: true
+
+      - name: Download MSI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: yhat-agent-msi
+          path: artifacts/
+
+      - name: Compute MSI version for filename
+        id: msi-version
+        shell: bash
+        run: |
+          MSI_VERSION="${RELEASE_TAG#v}"
+          MSI_VERSION="${MSI_VERSION}.0"
+          echo "msi-version=$MSI_VERSION" >> $GITHUB_OUTPUT
+
+      - name: List all artifacts
+        run: |
+          echo "Artifacts to release:"
+          ls -lh artifacts/
+
+      - name: Compute checksums for MSI
+        shell: bash
+        run: |
+          MSI_FILE="artifacts/yhat-agent-${{ steps.msi-version.outputs.msi-version }}-amd64.msi"
+          if [ -f "$MSI_FILE" ]; then
+            checksum_hex=$(openssl dgst -sha256 -binary "$MSI_FILE" | xxd -p | tr -d '\n')
+            printf '%s  %s\n' "$checksum_hex" "$(basename $MSI_FILE)" >> artifacts/SHA256SUMS
+            echo "MSI checksum added to SHA256SUMS"
+          else
+            echo "WARNING: MSI file not found at $MSI_FILE"
+            ls -la artifacts/*.msi 2>/dev/null || true
+          fi
+
+      - name: Append Go binary checksums to SHA256SUMS
+        run: |
+          for f in artifacts/*.sha256sum; do
+            [ -f "$f" ] && cat "$f" >> artifacts/SHA256SUMS
+          done
+          echo "SHA256SUMS contents:"
+          cat artifacts/SHA256SUMS
 
       - name: Upload to GitHub Release (draft)
         continue-on-error: true
@@ -241,6 +353,6 @@ jobs:
           draft: true
           files: |
             artifacts/*
-            SHA256SUMS
+          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

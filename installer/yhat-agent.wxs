@@ -1,0 +1,300 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  yhat-agent.wxs — WiX 3.14 source for the YHat Agent per-user MSI installer.
+
+  Schema:  xmlns="http://schemas.microsoft.com/wix/2006/wi"
+
+  Version strategy:
+    - CI passes YHAT_VERSION (e.g. 3.0.1.0) via candle -dYHAT_VERSION=...
+    - Local builds fall back to the default declared here (3.0.0.0).
+    - MSI ProductVersion = 4 octets (required by MSI).
+    - UpgradeCode is fixed so every version upgrades the same package.
+
+  Install scope (per-user, no admin):
+    - ALLUSERS=""       — per-user install, no UAC prompt
+    - INSTALLFOLDER     — %LOCALAPPDATA%\Programs\YHat Agent\
+    - HKCU\Software\YHat Agent\InstallPath — registry backup of INSTALLFOLDER
+      (read by the uninstall CA when the MSI is no longer on disk)
+
+  Custom actions:
+    CA_Install_CMD   (type 51, immediate)  Sets YHAT_INSTALL_CMD = install command
+    CA_Install       (type 1,  deferred)  WixQuietExec with YHAT_INSTALL_CMD
+    CA_ReadUninstPath(type 51, immediate)  Sets YHAT_UNINSTALL_CMD = uninstall command
+    CA_Uninstall     (type 1,  immediate)  WixQuietExec with YHAT_UNINSTALL_CMD
+
+  Exit codes:  WixQuietExec propagates the process exit code.
+               CustomAction Return="check" makes the MSI abort on non-zero.
+
+  Build (Windows PowerShell):
+    $env:YHAT_VERSION = "3.0.1.0"
+    $src = "dist\yhat-agent_windows_amd64.exe"
+    candle.exe -dYHAT_VERSION=$env:YHAT_VERSION -dYHAT_SOURCE_DIR=$src installer\yhat-agent.wxs
+    light.exe -ext WixUiExtension yhat-agent.wixobj -o dist\yhat-agent-3.0.1.0-amd64.msi
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+
+  <?define YHAT_VERSION        = "3.0.0.0"?>
+  <?define YHAT_UPGRADE_CODE   = "7e3a8c4d-9f12-4b5e-a8e6-1d2f3a5b7c9e"?>
+  <?define YHAT_MANUFACTURER   = "YHat"?>
+  <?define YHAT_PRODUCT_NAME   = "YHat Agent"?>
+  <?define YHAT_PRODUCT_ID     = "*"?>
+
+  <?ifdef YHAT_SOURCE_DIR?>
+    <?define YHAT_SOURCE = "$(var.YHAT_SOURCE_DIR)"?>
+  <?else?>
+    <?define YHAT_SOURCE = "dist\yhat-agent.exe"?>
+  <?endif?>
+
+  <Product
+    Id="$(var.YHAT_PRODUCT_ID)"
+    Name="$(var.YHAT_PRODUCT_NAME)"
+    Language="1033"
+    Version="$(var.YHAT_VERSION)"
+    Manufacturer="$(var.YHAT_MANUFACTURER)"
+    UpgradeCode="$(var.YHAT_UPGRADE_CODE)">
+
+    <!--
+      Package
+        InstallPrivileges="limited"  — per-user rights only
+        InstallScope="perUser"       — scope hint for the OS
+        Compressed="yes"             — embed all files in the MSI (no external cab)
+    -->
+    <Package
+      InstallerVersion="200"
+      InstallPrivileges="limited"
+      InstallScope="perUser"
+      Description="YHat Agent — Cerebro YHat v1.2 operator agent"
+      Compressed="yes"
+      Keywords="MCP;OpenCode;Claude;YHat;AI"/>
+
+    <!-- Single disk image; cabinet embedded in the MSI. -->
+    <Media Id="1" Cabinet="yhat-agent.cab" EmbedCab="yes"/>
+
+    <!--
+      Upgrade — remove any prior version before installing this one.
+    -->
+    <MajorUpgrade
+      Schedule="afterInstallInitialize"
+      DowngradeErrorLevel="error"
+      AllowSameVersionUpgrades="no"
+      MigrateFeatureStates="yes"/>
+
+    <!--
+      Properties
+        ALLUSERS=""            — per-user install (no admin, no UAC prompt)
+        YHAT_INSTALL_CMD       — full install command; set by CA_Install_CMD (immediate)
+        YHAT_UNINSTALL_CMD      — full uninstall command; set by CA_ReadUninstPath (immediate)
+    -->
+    <Property Id="ALLUSERS"           Value=""/>
+    <Property Id="YHAT_INSTALL_CMD"  Value=""/>
+    <Property Id="YHAT_UNINSTALL_CMD" Value=""/>
+
+    <!--
+      Directory tree.
+      INSTALLFOLDER = %LOCALAPPDATA%\Programs\YHat Agent\
+      Registry component stores this path so uninstall can find the .exe.
+    -->
+    <Directory Id="LOCALAPPDATA" Name="LocalAppDataFolder">
+      <Directory Id="INSTALLFOLDER" Name="Programs">
+        <Directory Id="YHATAGENT" Name="YHat Agent"/>
+      </Directory>
+    </Directory>
+
+    <!--
+      Component: ships yhat-agent.exe.
+        Win64="yes"          — 64-bit binary
+        NeverOverwrite="no"  — reinstalls if the binary changed
+        Compressed="yes"     — embedded in the MSI
+    -->
+    <Component
+      Id="CMP_yhat_agent_exe"
+      Guid="a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+      Win64="yes"
+      NeverOverwrite="no">
+      <File
+        Id="FILE_yhat_agent_exe"
+        Source="$(var.YHAT_SOURCE)"
+        KeyPath="yes"
+        Compressed="yes"
+        SelfReg="no"
+        Vital="yes"/>
+    </Component>
+
+    <!--
+      Registry component: persists the install path for uninstall.
+      Action="createAndRemoveOnUninstall":
+        Creates HKCU\Software\YHat Agent\InstallPath at install time.
+        Removes the entire key at uninstall time (after CAs fire).
+    -->
+    <Component
+      Id="CMP_InstallPath_Registry"
+      Guid="b2c3d4e5-f6a7-8901-bcde-f12345678901"
+      Win64="yes">
+      <RegistryKey
+        Id="REG_InstallPath"
+        Root="HKCU"
+        Key="Software\YHat Agent"
+        Action="createAndRemoveOnUninstall">
+        <RegistryValue
+          Id="REG_InstallPath_Value"
+          Name="InstallPath"
+          Type="string"
+          Value="[INSTALLFOLDER]"
+          KeyPath="yes"/>
+      </RegistryKey>
+    </Component>
+
+    <!--
+      Feature: single flat feature containing both components.
+    -->
+    <Feature Id="FEAT_Product" Title="YHat Agent" Level="1">
+      <ComponentRef Id="CMP_yhat_agent_exe"/>
+      <ComponentRef Id="CMP_InstallPath_Registry"/>
+    </Feature>
+
+    <!-- ================================================================
+         Custom Actions
+
+         CA_Install_CMD  (type 51 = SetProperty, immediate)
+           Sets YHAT_INSTALL_CMD to the install command string.
+           [INSTALLFOLDER] is resolved by the immediate phase
+           after CostFinalize has set it.
+           This property's value becomes CustomActionData for CA_Install.
+
+         CA_Install  (type 1 = binary DLL, deferred)
+           Entry point: WixQuietExec  (from WiX CA extension DLL).
+           WixQuietExec reads CustomActionData and runs the command.
+           Execute="deferred" + Impersonate="yes" — runs as the
+           logged-on user (not SYSTEM) for per-user write access.
+           Return="check" — MSI aborts on non-zero exit.
+
+         CA_ReadUninstPath  (type 51 = SetProperty, immediate)
+           Sets YHAT_UNINSTALL_CMD to the uninstall command.
+           REG_InstallPath is a normal MSI property holding the
+           registry value read from HKCU\Software\YHat Agent\InstallPath.
+
+         CA_Uninstall  (type 1 = binary DLL, immediate)
+           Entry point: WixQuietExec.
+           Runs the uninstall command immediately (no rollback needed;
+           uninstall is already a destructive operation).
+           Return="check" — MSI exits non-zero if uninstall fails.
+
+         ================================================================ -->
+
+    <!--
+      CA_Install_CMD  (line 130)
+      Sets the install command in the immediate phase.
+      Value uses [INSTALLFOLDER] which is resolved after CostFinalize.
+      This becomes CustomActionData for CA_Install (deferred).
+    -->
+    <CustomAction
+      Id="CA_Install_CMD"
+      Property="YHAT_INSTALL_CMD"
+      Value="cmd /c &quot;[INSTALLFOLDER]yhat-agent.exe&quot; install --no-bandeja"
+      Execute="immediate"
+      Return="check"/>
+
+    <!--
+      CA_Install  (line 147)
+      Deferred custom action — runs yhat-agent install.
+      WixQuietExec reads CustomActionData (= YHAT_INSTALL_CMD value).
+      Impersonate="yes" ensures it runs as the logged-on user.
+    -->
+    <CustomAction
+      Id="CA_Install"
+      BinaryKey="WixCA"
+      DllEntry="WixQuietExec"
+      Execute="deferred"
+      Return="check"
+      Impersonate="yes"/>
+
+    <!--
+      CA_ReadUninstPath  (line 159)
+      Reads the registry-stored install path and builds the uninstall command.
+      Fires in the immediate phase before RemoveExistingProducts,
+      when HKCU\Software\YHat Agent\InstallPath is still present.
+      The registry value is stored in the REG_InstallPath property
+      (a standard MSI property bound to the RegistryValue element).
+    -->
+    <CustomAction
+      Id="CA_ReadUninstPath"
+      Property="YHAT_UNINSTALL_CMD"
+      Value="cmd /c &quot;[REG_InstallPath]yhat-agent.exe&quot; uninstall --yes"
+      Execute="immediate"
+      Return="ignore"/>
+
+    <!--
+      CA_Uninstall  (line 176)
+      Immediate custom action — runs yhat-agent uninstall.
+      WixQuietExec reads CustomActionData (= YHAT_UNINSTALL_CMD value).
+      Return="check" propagates the exit code to msiexec.
+    -->
+    <CustomAction
+      Id="CA_Uninstall"
+      BinaryKey="WixCA"
+      DllEntry="WixQuietExec"
+      Execute="immediate"
+      Return="check"
+      Impersonate="yes"/>
+
+    <!-- ================================================================
+         InstallExecuteSequence
+
+         Order for fresh install (NOT Installed):
+           CostFinalize       → resolves INSTALLFOLDER
+           CA_Install_CMD     → sets YHAT_INSTALL_CMD        (immediate)
+           InstallInitialize  → starts MSI transaction
+           CA_Install         → runs yhat-agent install      (deferred)
+           [file copy, registry write]
+           InstallFinalize    → commits or rolls back
+
+         Order for uninstall/upgrade (Installed AND REMOVE):
+           RemoveExistingProducts  → removes prior MSI files
+           CA_ReadUninstPath      → sets YHAT_UNINSTALL_CMD   (immediate)
+           CA_Uninstall           → runs yhat-agent uninstall (immediate)
+           [RemoveExistingProducts continues: removes files, registry]
+           InstallFinalize
+
+         The immediate CAs fire in declaration order (CA_ReadUninstPath,
+         then CA_Uninstall) because both are immediate and share no
+         sequencing dependency — both are ordered relative to
+         RemoveExistingProducts.
+
+         ================================================================ -->
+
+    <InstallExecuteSequence>
+
+      <!-- Store install command (immediate, after CostFinalize resolves INSTALLFOLDER). -->
+      <Custom Action="CA_Install_CMD" After="CostFinalize">
+        NOT Installed
+      </Custom>
+
+      <!-- Run yhat-agent install no-bandeja (deferred, after transaction starts). -->
+      <Custom Action="CA_Install" After="InstallInitialize">
+        NOT Installed
+      </Custom>
+
+      <!-- Build uninstall command from the registry-stored path (immediate, before REMOVE). -->
+      <Custom Action="CA_ReadUninstPath" Before="RemoveExistingProducts">
+        Installed AND REMOVE
+      </Custom>
+
+      <!-- Run yhat-agent uninstall yes (immediate, files still present at this point). -->
+      <Custom Action="CA_Uninstall" After="CA_ReadUninstPath">
+        Installed AND REMOVE
+      </Custom>
+
+    </InstallExecuteSequence>
+
+    <!--
+      UI — completely silent.
+      UIRef to a minimal UI suppresses the built-in dialog chain.
+      The Publish override makes ExitDialog return immediately
+      (no finish screen, no progress bar).
+    -->
+    <UIRef Id="WixUI_InstallDir"/>
+    <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999">1</Publish>
+
+  </Product>
+
+</Wix>

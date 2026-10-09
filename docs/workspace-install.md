@@ -109,3 +109,90 @@ To recover: restore from the backup file and resolve the conflict.
 # Self-test (runs MCP server diagnostics)
 yhat-agent mcp --selftest
 ```
+
+---
+
+## MSI Installer (Per-User, Silent)
+
+For non-developer operators, the MSI installer provides a double-click install
+without requiring `go install` or a terminal.
+
+### Installing from the MSI
+
+1. **Download** the `.msi` from the GitHub release page (or the IT-shared location).
+2. **Double-click** `yhat-agent-<version>-amd64.msi`.
+3. The installer runs silently — no dialog, no UAC prompt.
+4. When it finishes, `yhat-agent` is installed at:
+
+   ```
+   %LOCALAPPDATA%\Programs\YHat Agent\yhat-agent.exe
+   ```
+
+5. Restart OpenCode and Claude Desktop to pick up the new MCP registration.
+
+> **SmartScreen warning:** The MSI is unsigned. On first run, Windows
+> SmartScreen may show "Windows protected your PC → More info → Run anyway".
+> Click "Run anyway". Contact IT to add a publisher exception once a
+> code-signing cert is issued (R1 from PRD).
+
+### Verifying the MSI Installation
+
+After installing, run these commands in PowerShell to confirm the install
+succeeded:
+
+```powershell
+# 1. Binary exists at the correct location
+Get-Item "$env:LOCALAPPDATA\Programs\YHat Agent\yhat-agent.exe"
+
+# 2. Version matches the release
+& "$env:LOCALAPPDATA\Programs\YHat Agent\yhat-agent.exe" version
+
+# 3. Self-test passes (F0 regression)
+& "$env:LOCALAPPDATA\Programs\YHat Agent\yhat-agent.exe" mcp --selftest
+# Expected: {"ok":true,"fts5":true,"mcp":true,...}
+
+# 4. Install path stored in registry (for uninstall)
+Get-ItemProperty HKCU:\Software\YHat Agent -Name InstallPath
+
+# 5. Status shows Cerebro section (F1-C)
+& "$env:LOCALAPPDATA\Programs\YHat Agent\yhat-agent.exe" status
+# Expected: Cerebro section with YHat home, DB path, Memories count
+```
+
+To verify the MCP server appears in OpenCode and Claude Desktop:
+
+```powershell
+# OpenCode: check for yhat in opencode.json
+Get-Content "$env:APPDATA\.config\opencode\opencode.json" |
+  ConvertFrom-Json | Select-Object -ExpandProperty mcp
+
+# Claude Desktop: check for yhat in claude_desktop_config.json
+Get-Content "$env:APPDATA\Claude\claude_desktop_config.json" |
+  ConvertFrom-Json | Select-Object -ExpandProperty mcpServers
+```
+
+### Uninstalling the MSI
+
+```powershell
+# Via the MSI (from the original .msi file)
+msiexec /x yhat-agent-<version>-amd64.msi
+
+# Or via Add/Remove Programs
+Start → Settings → Apps → YHat Agent → Uninstall
+```
+
+The uninstall custom action runs `yhat-agent uninstall --yes` before removing
+files, which cleans up:
+
+- F0 OpenCode + Claude Desktop MCP registrations
+- F1 Cerebro `config.yaml`, `state.json`, `yhat.db`
+
+The registry key `HKCU\Software\YHat Agent` is removed automatically by MSI.
+
+### Honest Limits of MSI Verification on This Box
+
+The MSI cannot be built or tested end-to-end on the Linux development
+environment because WiX is a Windows-only toolchain. Automated smoke tests
+in CI verify the `.msi` table structure using `msiinfo`. Manual verification
+on a real Windows WorkSpace is required before release (see F1-F runbook in
+`odd/tasks/cerebro-f1f.md`).
