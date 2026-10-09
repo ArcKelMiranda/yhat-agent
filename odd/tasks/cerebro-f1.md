@@ -118,13 +118,25 @@ that writes `config.yaml` from the operator's Windows identity.
   the intended fields.
 
 ### F1-E. Sensitive-content filter (~0.5 day)
-- `internal/sensitive/sensitive.go` with `Scan(text string) []Match`
-  and a default literal set; optional local pattern file
-  reuse of the existing `.sensitive-content-patterns` location.
-- Test-driven with hand-crafted corpora: AWS keys, GitHub
-  PATs, PEM blocks, basic username/host patterns.
-- `propose_memory` runs the filter on `title + content +
-  context` and rejects when any literal matches.
+- [x] F1-E landed on `feat/cerebro-f1` as commit `3c85c8a`
+  (646 insertions, 4 files). Windows build SHA-256
+  `3a9fd8b12cc95cdf7a441a27455fe942eb57bab0c228b876d277b8181455ed57`.
+- Defaults-only policy (user chose it this turn). No
+  `.sensitive-content-patterns` file is consulted by the F1
+  filter; the legacy file remains untouched.
+- Patterns: AKIA access key, GitHub PATs
+  (gh[pousr]_[A-Za-z0-9]{20,}), PEM private key block,
+  Bearer JWT, Slack `xox[baprs]-`, Anthropic `sk-ant-`,
+  OpenAI `sk-`. Implemented as Go regexps with one-time
+  init-time compilation.
+- Masking in the model-facing response: at most 12 visible
+  chars (4+4+4) and 40-byte cap, with **** in the middle.
+- `propose_memory` calls `sensitive.Scan(title + \n + content
+  + \n + context)`; on a non-empty match, returns IsError with
+  Spanish copy, never calls `store.ProposeMemory`.
+- 22 internal/sensitive tests + 2 new mcp tests cover the
+  patterns, position arithmetic on UTF-8 text, multi-match,
+  false-positive cases, and the no-persist guarantee.
 
 ### F1-F. WorkSpace regression run (~0.5 day)
 - The previous F0 install wrote the old `~/.config/opencode`

@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ArcKelMiranda/yhat-agent/internal/sensitive"
 	"github.com/ArcKelMiranda/yhat-agent/internal/spike"
 	"github.com/ArcKelMiranda/yhat-agent/internal/store"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -152,44 +153,40 @@ func isStoreEmpty(ctx context.Context) bool {
 }
 
 // ---------------------------------------------------------------------------
-// F1-E sensitive content filter (default literals)
-// The real implementation lives in internal/sensitive (F1-E).
-// This default implementation covers the literals documented in F1-A:
-// AWS keys, bearer-style tokens, PEM private-key blocks.
-// TODO(F1-E): replace with internal/sensitive.Scan(title + content + context).
-// ---------------------------------------------------------------------------
+// F1-E sensitive content filter.
+// Uses internal/sensitive.Scan to detect credential patterns in
+// title+content+context and returns a masked-match Spanish message without
+// persisting the row.
 
-// sensitiveDefaultPatterns is the default literal set for the sensitive-content
-// filter. The real F1-E implementation will load this from a per-operator
-// .sensitive-content-patterns file when present.
-var sensitiveDefaultPatterns = []string{
-	// AWS access keys (AKIA...).
-	"AKIA",
-	// Bearer tokens.
-	"Bearer ",
-	"Authorization: Bearer",
-	// PEM private key blocks.
-	"-----BEGIN PRIVATE KEY-----",
-	"-----BEGIN RSA PRIVATE KEY-----",
-	"-----BEGIN EC PRIVATE KEY-----",
-	"-----BEGIN OPENSSH PRIVATE KEY-----",
-	// GitHub personal access tokens.
-	"ghp_", "gho_", "ghu_", "ghs_", "ghr_",
+// formatSensisitiveMessage returns a Spanish JSON error message for a matched
+// secret. The matched substring is masked: at most 8 chars visible (4+4),
+// total length capped at 40 bytes.
+func formatSensisitiveMessage(category, matched string) string {
+	masked := maskSecret(matched)
+	return fmt.Sprintf(`{"error": "Contenido bloqueado: parece un secreto de tipo %s (%s)."}`,
+		category, masked)
 }
 
-// scanSensitive returns true if any default sensitive pattern appears in
-// title, content, or context.
-func scanSensitive(title, content string, context_ *string) bool {
-	combined := title + "\n" + content
-	if context_ != nil {
-		combined += "\n" + *context_
+// maskSecret masks a secret string, showing at most the first 4 and last 4
+// characters with "****" in between. Total length is capped at 40 bytes.
+// Examples:
+//   - "AKIAIOSFODNN7EXAMPLE" → "AKIA****MPLE" (20 bytes, first 4 + **** + last 4)
+//   - "ghp_xxxx" (short)   → "ghp_****"   (8 bytes, first 4 + ****)
+//   - "Bearer eyJ..."        → "Bear****..." (first 4 + **** + suffix)
+func maskSecret(s string) string {
+	const maxLen = 40
+	if len(s) > maxLen {
+		s = s[:maxLen]
 	}
-	for _, pattern := range sensitiveDefaultPatterns {
-		if strings.Contains(combined, pattern) {
-			return true
+	if len(s) <= 8 {
+		// Short secrets: show all available, mask the tail.
+		if len(s) <= 4 {
+			return s + "****"
 		}
+		return s[:4] + "****"
 	}
-	return false
+	// Normal: first 4 + **** + last 4.
+	return s[:4] + "****" + s[len(s)-4:]
 }
 
 // ---------------------------------------------------------------------------
@@ -215,13 +212,17 @@ func proposeMemoryHandler(ctx context.Context, req *mcp.CallToolRequest, input p
 		}, nil, nil
 	}
 
-	// F1-E sensitive-content scan (placeholder; F1-E will replace scanSensitive).
-	// Document that F1-E is the real implementation.
-	if scanSensitive(input.Title, input.Content, input.Context) {
+	// F1-E sensitive-content scan: build text, scan, return masked match.
+	full := input.Title + "\n" + input.Content
+	if input.Context != nil {
+		full += "\n" + *input.Context
+	}
+	if matches := sensitive.Scan(full); len(matches) > 0 {
+		first := matches[0]
+		matched := full[first.Start:first.End]
+		msg := formatSensisitiveMessage(first.Category, matched)
 		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{
-				Text: `{"error": "Contenido bloqueado por política de seguridad"}`,
-			}},
+			Content: []mcp.Content{&mcp.TextContent{Text: msg}},
 			IsError: true,
 		}, nil, nil
 	}

@@ -1522,7 +1522,8 @@ func TestF1_SearchBrain_DBNotInitialized_FallsBackToF0(t *testing.T) {
 }
 
 // TestF1_SensitiveContentBlocked verifies that a memory with sensitive content
-// (detected by the placeholder filter) returns IsError=true.
+// (detected by the F1-E internal/sensitive package) returns IsError=true
+// with a masked-match Spanish message.
 func TestF1_SensitiveContentBlocked(t *testing.T) {
 	_, session, _ := connectPairWithStore(t)
 	defer session.Close()
@@ -1530,27 +1531,118 @@ func TestF1_SensitiveContentBlocked(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// AWS-style access key in content should be blocked.
+	// AWS access key AKIAIOSFODNN7EXMPL should be blocked.
+	// Masked form: AKIA****MPLE (first 4 + **** + last 4).
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{
 		Name: "propose_memory",
 		Arguments: map[string]any{
 			"type":    "decision",
 			"title":   "Configuración de AWS",
-			"content": "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE",
+			"content": "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXMPL00",
 		},
 	})
 	if err != nil {
 		t.Fatalf("CallTool: %v", err)
 	}
 	if !result.IsError {
-		t.Error("propose_memory(sensitive content): IsError should be true")
+		t.Error("propose_memory(AWS key): IsError should be true")
 	}
 	text, ok := result.Content[0].(*mcp.TextContent)
 	if !ok {
 		t.Fatalf("content[0]: expected *TextContent, got %T", result.Content[0])
 	}
-	if !strings.Contains(text.Text, "bloqueado") && !strings.Contains(text.Text, "seguridad") {
-		t.Errorf("propose_memory(sensitive): expected security block message, got %q", text.Text)
+	// Must mention "bloqueado" and the category "aws_access_key".
+	if !strings.Contains(text.Text, "bloqueado") {
+		t.Errorf("propose_memory(AWS key): expected 'bloqueado' in message, got %q", text.Text)
+	}
+	if !strings.Contains(text.Text, "aws_access_key") {
+		t.Errorf("propose_memory(AWS key): expected 'aws_access_key' category, got %q", text.Text)
+	}
+	// Masked form of AKIAIOSFODNN7EXMPL.
+	if !strings.Contains(text.Text, "AKIA****PL00") {
+		t.Errorf("propose_memory(AWS key): expected masked 'AKIA****PL00', got %q", text.Text)
+	}
+}
+
+// TestF1_SensitiveContentBlocked_GitHub verifies GitHub PAT detection.
+func TestF1_SensitiveContentBlocked_GitHub(t *testing.T) {
+	_, session, _ := connectPairWithStore(t)
+	defer session.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// GitHub PAT with 20+ chars after ghp_ prefix.
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "propose_memory",
+		Arguments: map[string]any{
+			"type":    "decision",
+			"title":   "Token de GitHub",
+			"content": "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+		},
+	})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if !result.IsError {
+		t.Error("propose_memory(GitHub PAT): IsError should be true")
+	}
+	text, ok := result.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("content[0]: expected *TextContent, got %T", result.Content[0])
+	}
+	if !strings.Contains(text.Text, "github_pat") {
+		t.Errorf("propose_memory(GitHub PAT): expected 'github_pat' category, got %q", text.Text)
+	}
+}
+
+// TestF1_SensitiveContentBlocked_NoRowPersisted verifies that a rejected
+// sensitive-content proposal does NOT appear in list_pending (i.e., the row
+// was never persisted to the DB).
+func TestF1_SensitiveContentBlocked_NoRowPersisted(t *testing.T) {
+	_, session, _ := connectPairWithStore(t)
+	defer session.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Propose a sensitive memory (AWS key) — should be rejected.
+	_, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "propose_memory",
+		Arguments: map[string]any{
+			"type":    "decision",
+			"title":   "AWS敏感",
+			"content": "AKIAIOSFODNN7EXMPL00",
+		},
+	})
+	if err != nil {
+		t.Fatalf("CallTool(AWS key): %v", err)
+	}
+
+	// list_pending must return 0 items — the row was never persisted.
+	listResult, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "list_pending",
+		Arguments: map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("list_pending: %v", err)
+	}
+	if listResult.IsError {
+		t.Fatalf("list_pending: unexpected IsError: %v", listResult.Content)
+	}
+	listText, ok := listResult.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("content[0]: expected *TextContent, got %T", listResult.Content[0])
+	}
+	var listResp struct {
+		Items any `json:"items"`
+		Count int `json:"count"`
+	}
+	if err := json.Unmarshal([]byte(listText.Text), &listResp); err != nil {
+		t.Fatalf("not JSON: %v", err)
+	}
+	if listResp.Count != 0 {
+		t.Errorf("list_pending after sensitive block: want count=0, got %d", listResp.Count)
 	}
 }
 
