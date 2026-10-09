@@ -79,21 +79,25 @@ that writes `config.yaml` from the operator's Windows identity.
   temp directory.
 
 ### F1-C. CLI install rewrite (~0.5 day)
-- New `yhat-agent install` writes:
-  - `%USERPROFILE%\.yhat\bin\yhat-agent.exe` symlink or copy
-    (not the F0 symlink in PATH; the F1 layout moves the
-    binary inside `.yhat`).
-  - `%USERPROFILE%\.yhat\config.yaml` with `operator:` from
-    `%USERNAME%` and the central repo URL placeholder.
-  - `%USERPROFILE%\.yhat\state.json` with version, registered
-    apps, schema version, last sync.
-- Existing OpenCode + packaged Claude registration kept
-  intact (no regression on what F0 already proved).
-- `yhat-agent status` extended to show DB path, schema version,
-  pending count, last sync.
-- `yhat-agent bandeja` opens `127.0.0.1:<port>/?token=<one-shot>`
-  via `start`/`xdg-open`/`open` and exits after the page
-  loads; the HTTP server keeps running in the background.
+- [x] F1-C landed on `feat/cerebro-f1` as commit `7042b81`
+  (882 insertions, 8 files; go.mod adds `gopkg.in/yaml.v3
+  v3.0.1`). Windows build SHA-256
+  `f3584895c73aab60cff0b78a97e7fdd19e9a006351f89272e5441e08b6a08769`.
+- New `internal/config` package with typed `Config` and
+  `State` structs, YAML config + JSON state, atomic write.
+- `yhat-agent install` keeps the F0 OpenCode + Claude
+  registration and now also writes `config.yaml`,
+  `state.json` and creates the SQLite DB at
+  `%USERPROFILE%\.yhat\yhat.db` (or platform equivalent).
+  Operator identity from `%USERNAME` on Windows.
+- `yhat-agent status` adds a `Cerebro` section with home,
+  DB, schema, per-status counts, operator, and last sync.
+  `--json` gains a `cerebro` key. Survives missing DB
+  gracefully.
+- 6 internal/config tests + 5 main integration tests.
+- User chose this turn: keep the F0 binary location
+  (don't move it), use a placeholder `central_repo` URL,
+  show DB + counts + last sync in status.
 
 ### F1-D. Bandeja HTTP server (~2 days)
 - `internal/bandeja/bandeja.go` exposing `Start(ctx, store) (*Server, error)`
