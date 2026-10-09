@@ -100,26 +100,29 @@ that writes `config.yaml` from the operator's Windows identity.
   show DB + counts + last sync in status.
 
 ### F1-D. Bandeja HTTP server (~2 days)
-- `internal/bandeja/bandeja.go` exposing `Start(ctx, store) (*Server, error)`
-  that listens on `127.0.0.1:0` and mints a one-shot token.
-- Endpoints:
-  - `GET /?token=...` — the page (Aprobar/Rechazar/Editar,
-    Enviados section).
-  - `POST /api/approve?token=...&id=...` — records validation.
-  - `POST /POST /api/reject?token=...&id=...&reason=...` —
-    records rejection with a free-text reason (min 1 char,
-    max 500).
-  - `POST /api/edit?token=...&id=...&title=...&content=...` —
-    updates title and content; the F1 store keeps `origin`,
-    `status`, and history intact.
-- Embedded HTML/CSS in `internal/bandeja/page.go` with simple
-  Spanish copy and no JS framework. Reachable from the bandeja
-  page only via the one-shot token; a request without a valid
-  token returns 404.
-- Auto-shutdown after 15 minutes idle (`time.Since(lastRequest) > 15m`).
-- Test-driven: spawn a real listener in a test, drive the
-  endpoints with `net/http`, assert the store mutated exactly
-  the intended fields.
+- [x] F1-D landed on `feat/cerebro-f1` as commit `226d1ee`
+  (1908 insertions, 6 files). Windows build SHA-256
+  `4b133394a53ccc1a518c42251d319df255bc77ec6669575b30b0b3f158188674`.
+- New `internal/bandeja` package: `Server.Start/URL/Close/Wait`
+  on 127.0.0.1:0, single 32-byte token, 404 without token,
+  15-min idle shutdown, operator identity from
+  `config.yaml` then `USERNAME` then `USER` then `unknown`.
+- Routes: `GET /` returns Spanish HTML with Pendientes and
+  Enviados sections. `POST /api/approve`, `POST /api/reject`
+  (optional reason, max 500 chars), `POST /api/edit` (title
+  1-200, content 1-10000). All POSTs re-validate the token.
+- Embedded Spanish HTML/CSS/JS in `page.go`; HTML escaping
+  for memory fields. No external assets, no framework.
+- New `yhat-agent bandeja` subcommand starts the server in
+  foreground. `yhat-agent install` also opens the bandeja at
+  the end unless `--no-bandeja` is set. Cross-platform
+  browser open (Windows: `start ""`; macOS: `open`; Linux:
+  `xdg-open`); falls back gracefully if missing.
+- New `store.ListByShareStatus` in `queries.go` for the
+  Enviados section.
+- 26 internal/bandeja tests + 3 bandeja integration tests.
+- User chose this turn: subcommand + auto-open on install;
+  reject reason optional; Enviados shows estado y razón.
 
 ### F1-E. Sensitive-content filter (~0.5 day)
 - [x] F1-E landed on `feat/cerebro-f1` as commit `3c85c8a`
