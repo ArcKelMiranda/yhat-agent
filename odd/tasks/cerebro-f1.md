@@ -21,6 +21,9 @@ that writes `config.yaml` from the operator's Windows identity.
 ## Sub-tasks (forecast 5-6 days)
 
 ### F1-A. Persistent SQLite store (~1.5 days)
+- [x] F1-A committed as `32a4380` on `feat/cerebro-f1` (1349 insertions,
+  1 deletion, 4 files; see git log for the canonical BR-rule map
+  and Windows cross-build SHA-256).
 - `internal/store/store.go` with `Open(path) (*Store, error)` and
   a `Memories`, `UploadQueue`, `SyncState` typed surface.
 - `internal/store/migrations/001_init.sql` matching the PRD
@@ -35,9 +38,17 @@ that writes `config.yaml` from the operator's Windows identity.
 - `BR13` sensitive-content filter, configurable per operator via
   the existing `.sensitive-content-patterns` file when present,
   with sensible default literals (AWS keys, generic
-  bearer-style tokens, `BEGIN ... PRIVATE KEY` blocks).
+  bearer-style tokens, `BEGIN ... PRIVATE KEY` blocks). Documented
+  in store.go as a contract the F1-B tool layer must satisfy
+  before calling ProposeMemory. Implementation is F1-E.
 - Test-driven: write the schema test first, then the migration,
   then the typed surface, then the BR rules.
+- Notes for follow-ups: ProposeMemory does a full-table scan per
+  insert for BR7; F1-B will switch to the partial unique index
+  for the hot path. ContentHash uses strings.Clone as an NFC
+  approximation; full Unicode NFC needs `golang.org/x/text/unicode/norm`
+  if operators start writing non-ASCII content beyond plain accented
+  Spanish.
 
 ### F1-B. Real MCP tools (~1.5 days)
 - `propose_memory` accepts `{type, title, content, context?}` and
