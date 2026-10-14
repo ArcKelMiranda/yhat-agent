@@ -169,6 +169,52 @@ func (s *Store) ListByShareStatus(ctx context.Context) ([]Memory, error) {
 	return items, rows.Err()
 }
 
+// MarkUploadSent flips the share_status of the given memory to 'sent'.
+// It also removes the matching entry from upload_queue.
+// Returns ErrNotFound if the memory does not exist.
+func (s *Store) MarkUploadSent(ctx context.Context, memoryID string) error {
+	result, err := s.db.ExecContext(ctx,
+		`UPDATE memories SET share_status='sent', updated_at=? WHERE id=?`,
+		time.Now().UTC(), memoryID,
+	)
+	if err != nil {
+		return fmt.Errorf("MarkUploadSent UPDATE: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return ErrNotFound
+	}
+	// Remove from queue.
+	_, err = s.db.ExecContext(ctx,
+		`DELETE FROM upload_queue WHERE memory_id=?`,
+		memoryID,
+	)
+	if err != nil {
+		return fmt.Errorf("MarkUploadSent DELETE queue: %w", err)
+	}
+	return nil
+}
+
+// RecordUploadFailure increments the attempts counter for the matching queue entry
+// and records the error message. The memory's share_status is left unchanged.
+// If the memory is not in the queue, the method returns nil (idempotent).
+func (s *Store) RecordUploadFailure(ctx context.Context, memoryID, errMsg string) error {
+	now := time.Now().UTC()
+	// Exponential-ish backoff: next retry in 30 minutes.
+	nextRetry := now.Add(30 * time.Minute)
+	result, err := s.db.ExecContext(ctx,
+		`UPDATE upload_queue
+		 SET attempts=attempts+1, last_error=?, next_retry_at=?
+		 WHERE memory_id=?`,
+		errMsg, nextRetry.Format(time.RFC3339), memoryID,
+	)
+	if err != nil {
+		return fmt.Errorf("RecordUploadFailure UPDATE: %w", err)
+	}
+	_, _ = result.RowsAffected() // 0 rows is fine (idempotent)
+	return nil
+}
+
 // scanMemoryRow scans a memories row into a Memory struct.
 // This is a copy of the private helper from store.go, scoped to this file.
 func scanMemoryRow(rows *sql.Rows) (Memory, error) {

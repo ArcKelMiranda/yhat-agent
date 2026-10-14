@@ -104,8 +104,8 @@ func TestProtocol_ListTools_OneTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(result.Tools) != 5 {
-		t.Fatalf("ListTools: expected 5 tools (F0+F1), got %d", len(result.Tools))
+	if len(result.Tools) != 6 {
+		t.Fatalf("ListTools: expected 6 tools (F0+F1+F2), got %d", len(result.Tools))
 	}
 	if result.Tools[0].Name != "fts5_search" {
 		t.Errorf("tool name: expected 'fts5_search', got %q", result.Tools[0].Name)
@@ -731,8 +731,8 @@ func TestSubprocess_CommandTransport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(tools.Tools) != 5 {
-		t.Fatalf("ListTools: expected 5 tools (F0+F1), got %d", len(tools.Tools))
+	if len(tools.Tools) != 6 {
+		t.Fatalf("ListTools: expected 6 tools (F0+F1+F2), got %d", len(tools.Tools))
 	}
 
 	// Call fts5_search with accented query.
@@ -845,9 +845,9 @@ func TestSubprocess_CommandTransport_UnknownTool(t *testing.T) {
 // Store is initialized fresh per test via the lazy-open path.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestF1_ToolRegistration verifies that the server exposes exactly 5 tools
+// TestF1_ToolRegistration verifies that the server exposes exactly 6 tools
 // after F1-B is implemented: fts5_search, propose_memory, list_pending,
-// get_memory, and search_brain.
+// get_memory, search_brain, and share_memory.
 func TestF1_ToolRegistration(t *testing.T) {
 	_, session := connectPair(t)
 	defer session.Close()
@@ -860,7 +860,7 @@ func TestF1_ToolRegistration(t *testing.T) {
 		t.Fatalf("ListTools: %v", err)
 	}
 
-	expected := []string{"fts5_search", "propose_memory", "list_pending", "get_memory", "search_brain"}
+	expected := []string{"fts5_search", "propose_memory", "list_pending", "get_memory", "search_brain", "share_memory"}
 	if len(result.Tools) != len(expected) {
 		t.Fatalf("tool count: want %d, got %d", len(expected), len(result.Tools))
 	}
@@ -1732,7 +1732,13 @@ func TestSubprocess_F1_HappyPath(t *testing.T) {
 		t.Fatalf("propose_memory: %v", err)
 	}
 	if proposeResult.IsError {
-		t.Fatalf("propose_memory: IsError=true: %v", proposeResult.Content)
+		var errText string
+		if len(proposeResult.Content) > 0 {
+			if tc, ok := proposeResult.Content[0].(*mcp.TextContent); ok {
+				errText = tc.Text
+			}
+		}
+		t.Fatalf("propose_memory: IsError=true content=%q", errText)
 	}
 	proposeText, ok := proposeResult.Content[0].(*mcp.TextContent)
 	if !ok {
@@ -1896,5 +1902,249 @@ func TestSQLiteSmokeTest(t *testing.T) {
 	}
 	if fetched.Status != store.StatusProposed {
 		t.Errorf("GetMemory: want status %q, got %q", store.StatusProposed, fetched.Status)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F2: share_memory tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestShareMemory_HappyPath verifies that share_memory enqueues a validated memory
+// and returns the queue record.
+func TestShareMemory_HappyPath(t *testing.T) {
+	_, session, _ := connectPairWithStore(t)
+	defer session.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Propose and get the ID.
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "propose_memory",
+		Arguments: map[string]any{
+			"type":    "decision",
+			"title":   "Memory to Share",
+			"content": "Content for share_memory test.",
+		},
+	})
+	if err != nil {
+		t.Fatalf("propose_memory: %v", err)
+	}
+	text, ok := result.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("content[0]: expected *TextContent, got %T", result.Content[0])
+	}
+	var mem store.Memory
+	if err := json.Unmarshal([]byte(text.Text), &mem); err != nil {
+		t.Fatalf("not JSON: %v", err)
+	}
+
+	// Validate the memory (directly via store for test isolation).
+	if err := mcpStore.Validate(ctx, mem.ID, "validator"); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+
+	// Call share_memory.
+	shareResult, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "share_memory",
+		Arguments: map[string]any{"id": mem.ID},
+	})
+	if err != nil {
+		t.Fatalf("share_memory: %v", err)
+	}
+	if shareResult.IsError {
+		t.Fatalf("share_memory: IsError=true: %v", shareResult.Content)
+	}
+	shareText, ok := shareResult.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("content[0]: expected *TextContent, got %T", shareResult.Content[0])
+	}
+
+	var queueRec struct {
+		MemoryID    string `json:"memory_id"`
+		Attempts    int    `json:"attempts"`
+		ShareStatus string `json:"share_status"`
+	}
+	if err := json.Unmarshal([]byte(shareText.Text), &queueRec); err != nil {
+		t.Fatalf("not JSON: %v", err)
+	}
+	if queueRec.MemoryID != mem.ID {
+		t.Errorf("memory_id: want %q, got %q", mem.ID, queueRec.MemoryID)
+	}
+	if queueRec.Attempts != 0 {
+		t.Errorf("attempts: want 0, got %d", queueRec.Attempts)
+	}
+	if queueRec.ShareStatus != "queued" {
+		t.Errorf("share_status: want 'queued', got %q", queueRec.ShareStatus)
+	}
+}
+
+// TestShareMemory_NotValidated verifies that share_memory returns IsError=true
+// when the memory is not validated.
+func TestShareMemory_NotValidated(t *testing.T) {
+	_, session, _ := connectPairWithStore(t)
+	defer session.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Propose a memory (status=proposed, not validated).
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "propose_memory",
+		Arguments: map[string]any{
+			"type":    "decision",
+			"title":   "Not Validated Memory",
+			"content": "Content.",
+		},
+	})
+	if err != nil {
+		t.Fatalf("propose_memory: %v", err)
+	}
+	text, _ := result.Content[0].(*mcp.TextContent)
+	var mem store.Memory
+	json.Unmarshal([]byte(text.Text), &mem)
+
+	// Try to share it (not validated).
+	shareResult, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "share_memory",
+		Arguments: map[string]any{"id": mem.ID},
+	})
+	if err != nil {
+		t.Fatalf("share_memory: %v", err)
+	}
+	if !shareResult.IsError {
+		t.Error("share_memory(not validated): IsError should be true")
+	}
+}
+
+// TestShareMemory_DBNotInitialized verifies that share_memory returns IsError=true
+// when the DB is not initialized.
+func TestShareMemory_DBNotInitialized(t *testing.T) {
+	resetMCPStore()
+	t.Setenv("YHAT_HOME", filepath.Join(t.TempDir(), "no-such-dir"))
+
+	_, session := connectPair(t)
+	defer session.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "share_memory",
+		Arguments: map[string]any{"id": "00000000-0000-0000-0000-000000000001"},
+	})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if !result.IsError {
+		t.Error("share_memory(db not initialized): IsError should be true")
+	}
+}
+
+// TestSubprocess_ShareMemory_AndSync writes a memory via the MCP subprocess,
+// enqueues it with share_memory, then runs sync and verifies the JSON file
+// was written to the central_repo.
+func TestSubprocess_ShareMemory_AndSync(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires subprocess")
+	}
+
+	binary := buildServerBinary(t)
+	tmpDir := t.TempDir()
+
+	// Set up config.yaml and central_repo.
+	cfgDir := filepath.Join(tmpDir, ".yhat")
+	if err := os.MkdirAll(cfgDir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	centralRepo := filepath.Join(tmpDir, "central")
+	if err := os.MkdirAll(centralRepo, 0755); err != nil {
+		t.Fatalf("MkdirAll central: %v", err)
+	}
+	cfgPath := filepath.Join(cfgDir, "config.yaml")
+	cfgContent := "operator: subproc-test\ncentral_repo: " + centralRepo + "\n"
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0644); err != nil {
+		t.Fatalf("WriteFile config.yaml: %v", err)
+	}
+
+	// Run MCP server subprocess.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	cmd := exec.Command(binary, "mcp")
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "YHAT_HOME="+cfgDir)
+
+	client := mcp.NewClient(
+		&mcp.Implementation{Name: "subproc-share-test", Version: "v1.0.0"},
+		&mcp.ClientOptions{},
+	)
+
+	session, err := client.Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer session.Close()
+
+	// Propose a memory.
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: "propose_memory",
+		Arguments: map[string]any{
+			"type":    "decision",
+			"title":   "Memory to Sync Subprocess",
+			"content": "Content for subprocess sync test.",
+		},
+	})
+	if err != nil {
+		t.Fatalf("propose_memory: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("propose_memory: IsError=true: %v", result.Content)
+	}
+	text, _ := result.Content[0].(*mcp.TextContent)
+	var mem store.Memory
+	if err := json.Unmarshal([]byte(text.Text), &mem); err != nil {
+		t.Fatalf("not JSON: %v", err)
+	}
+
+	// Validate via the store (direct DB access).
+	dbPath := filepath.Join(cfgDir, "yhat.db")
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	if err := s.Validate(ctx, mem.ID, "validator"); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	s.Close()
+
+	// Call share_memory.
+	shareResult, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "share_memory",
+		Arguments: map[string]any{"id": mem.ID},
+	})
+	if err != nil {
+		t.Fatalf("share_memory: %v", err)
+	}
+	if shareResult.IsError {
+		t.Fatalf("share_memory: IsError=true: %v", shareResult.Content)
+	}
+
+	// Run sync command.
+	syncCmd := exec.Command(binary, "sync", "--central-repo="+centralRepo)
+	syncCmd.Env = append(os.Environ(), "CGO_ENABLED=0", "YHAT_HOME="+cfgDir)
+	syncOut, syncErr := syncCmd.CombinedOutput()
+	if syncErr != nil {
+		t.Fatalf("sync command: %v\n%s", syncErr, string(syncOut))
+	}
+
+	// Verify JSON file was written.
+	wantPath := filepath.Join(centralRepo, mem.ID+".json")
+	if _, err := os.Stat(wantPath); os.IsNotExist(err) {
+		t.Errorf("sync: expected JSON file at %s\nOutput: %s", wantPath, string(syncOut))
+	}
+
+	// Verify sync output mentions sent=1.
+	if !strings.Contains(string(syncOut), "1 sent") {
+		t.Errorf("sync output: expected '1 sent', got %q", string(syncOut))
 	}
 }

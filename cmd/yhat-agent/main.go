@@ -46,6 +46,9 @@ func main() {
 	case "mcp":
 		exitCode := runMCPCommand(os.Args[2:])
 		os.Exit(exitCode)
+	case "sync":
+		exitCode := runSyncCommand(os.Args[2:])
+		os.Exit(exitCode)
 	case "version", "--version", "-v":
 		runVersion()
 	case "help", "--help", "-h":
@@ -70,6 +73,7 @@ Commands:
   uninstall  Remove managed files (requires --yes)
   bandeja    Open the local approval inbox in your browser
   mcp        Run MCP stdio server (experimental F0 prototype)
+  sync       Drain upload queue and sync with central repository
   version    Show version and build information
   help       Show this help message
 

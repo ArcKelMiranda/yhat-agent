@@ -23,9 +23,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ArcKelMiranda/yhat-agent/internal/sensitive"
+	"github.com/ArcKelMiranda/yhat-agent/internal/share"
 	"github.com/ArcKelMiranda/yhat-agent/internal/spike"
 	"github.com/ArcKelMiranda/yhat-agent/internal/store"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -37,7 +39,11 @@ import (
 
 // mcpStore is the lazily-opened SQLite store for F1 tools.
 // nil means not-yet-attempted; a *Store is set after the first successful open.
-var mcpStore *store.Store
+// Access is protected by mcpStoreMu to allow safe concurrent reads.
+var (
+	mcpStore   *store.Store
+	mcpStoreMu sync.Mutex
+)
 
 // mcpStorePath removed: never read by production code, only written
 // during the test reset path. Use defaultStorePath() if a path is
@@ -46,6 +52,8 @@ var mcpStore *store.Store
 // resetMCPStore is for testing only: closes and nil-out the cached store so each
 // test gets a fresh store for its own temp directory.
 func resetMCPStore() {
+	mcpStoreMu.Lock()
+	defer mcpStoreMu.Unlock()
 	if mcpStore != nil {
 		mcpStore.Close()
 		mcpStore = nil
@@ -116,6 +124,8 @@ func operatorAuthor() string {
 // on first valid tool invocation.
 // The store is cached in mcpStore for the lifetime of the process.
 func ensureStore() error {
+	mcpStoreMu.Lock()
+	defer mcpStoreMu.Unlock()
 	if mcpStore != nil {
 		return nil
 	}
@@ -144,6 +154,8 @@ func ensureStore() error {
 
 // isStoreEmpty returns true if the memories table has zero rows.
 func isStoreEmpty(ctx context.Context) bool {
+	mcpStoreMu.Lock()
+	defer mcpStoreMu.Unlock()
 	if mcpStore == nil {
 		return true
 	}
@@ -423,6 +435,99 @@ func searchBrainF0Fallback(ctx context.Context, query string) (*mcp.CallToolResu
 }
 
 // ---------------------------------------------------------------------------
+// F2: share_memory tool
+// ---------------------------------------------------------------------------
+
+// shareMemoryInput matches the JSON schema for the share_memory tool.
+type shareMemoryInput struct {
+	ID string `json:"id"`
+}
+
+// shareMemoryHandler enqueues a validated memory for sharing via the central
+// repository. The operator identity comes from config.yaml (or env fallback,
+// same precedence as propose_memory).
+func shareMemoryHandler(ctx context.Context, req *mcp.CallToolRequest, input shareMemoryInput) (*mcp.CallToolResult, any, error) {
+	if err := ensureStore(); err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf(`{"error": %q}`, err.Error())}},
+			IsError: true,
+		}, nil, nil
+	}
+
+	// Verify the memory exists and is validated.
+	mem, err := mcpStore.GetMemory(ctx, input.ID)
+	if err != nil {
+		return storeErrorResult(err), nil, nil
+	}
+	if mem.Status != store.StatusValidated {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{
+				Text: fmt.Sprintf(`{"error": "La memoria debe estar en estado 'validated' para compartir. Estado actual: %s"}`,
+					mem.Status),
+			}},
+			IsError: true,
+		}, nil, nil
+	}
+	if mem.ShareStatus != store.ShareStatusNone {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{
+				Text: fmt.Sprintf(`{"error": "La memoria ya fue compartida. Estado de compartición actual: %s"}`,
+					mem.ShareStatus),
+			}},
+			IsError: true,
+		}, nil, nil
+	}
+
+	// Enqueue.
+	err = share.Queue(ctx, mcpStore, input.ID, operatorAuthor())
+	if err != nil {
+		if errors.Is(err, share.ErrNotShareable) {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{
+					Text: fmt.Sprintf(`{"error": "No se puede compartir: %s"}`, err.Error()),
+				}},
+				IsError: true,
+			}, nil, nil
+		}
+		return storeErrorResult(err), nil, nil
+	}
+
+	// Fetch the queue entry to return to the model.
+	queue, err := mcpStore.ListUploadQueue(ctx)
+	if err != nil {
+		return storeErrorResult(err), nil, nil
+	}
+	var entry store.UploadEntry
+	for _, e := range queue {
+		if e.MemoryID == input.ID {
+			entry = e
+			break
+		}
+	}
+
+	response := map[string]any{
+		"memory_id":    entry.MemoryID,
+		"attempts":      entry.Attempts,
+		"ordered_by":    entry.OrderedBy,
+		"ordered_at":    entry.OrderedAt.Format("2006-01-02T15:04:05Z07:00"),
+		"share_status":  store.ShareStatusQueued,
+	}
+	if entry.NextRetryAt != nil {
+		response["next_retry_at"] = entry.NextRetryAt.Format("2006-01-02T15:04:05Z07:00")
+	}
+
+	data, merr := json.Marshal(response)
+	if merr != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: `{"error": "serialization failed"}`}},
+			IsError: true,
+		}, nil, nil
+	}
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: string(data)}},
+	}, nil, nil
+}
+
 // Error mapping: store sentinel → Spanish MCP error
 // ---------------------------------------------------------------------------
 
@@ -500,6 +605,10 @@ func runMCPCommand(args []string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Hour)
 	defer cancel()
 	srv := newMCPServer()
+
+	// Start the background sync scheduler (guards against double-start).
+	startBackgroundScheduler(ctx)
+
 	if err := srv.Run(ctx, &mcp.StdioTransport{}); err != nil {
 		fmt.Fprintf(os.Stderr, "mcp: server error: %v\n", err)
 		return 1
@@ -518,6 +627,7 @@ func newMCPServer() *mcp.Server {
 				"Usa list_pending para revisar las memorias propuestas awaiting aprobación. " +
 				"Usa get_memory para consultar una memoria específica por su ID. " +
 				"Usa search_brain para buscar en tu base de conocimiento local (o las memorias F0 si la base está vacía). " +
+				"Usa share_memory para encolar una memoria validada para compartir. " +
 				"Usa fts5_search solo para diagnóstico sintético.",
 		},
 	)
@@ -621,6 +731,24 @@ func newMCPServer() *mcp.Server {
 			"additionalProperties": false,
 		},
 	}, searchBrainHandler)
+
+	// F2: share_memory
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "share_memory",
+		Description: "Encola una memoria validada para compartir con el repositorio central. El estado debe ser 'validated' y share_status='none'. Devuelve el registro de cola con memory_id, attempts, ordered_by y share_status=queued.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"id": map[string]any{
+					"type":        "string",
+					"description": "UUID de la memoria a compartir.",
+					"format":      "uuid",
+				},
+			},
+			"required":             []any{"id"},
+			"additionalProperties": false,
+		},
+	}, shareMemoryHandler)
 
 	return srv
 }
