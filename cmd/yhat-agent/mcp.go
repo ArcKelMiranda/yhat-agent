@@ -507,10 +507,10 @@ func shareMemoryHandler(ctx context.Context, req *mcp.CallToolRequest, input sha
 
 	response := map[string]any{
 		"memory_id":    entry.MemoryID,
-		"attempts":      entry.Attempts,
-		"ordered_by":    entry.OrderedBy,
-		"ordered_at":    entry.OrderedAt.Format("2006-01-02T15:04:05Z07:00"),
-		"share_status":  store.ShareStatusQueued,
+		"attempts":     entry.Attempts,
+		"ordered_by":   entry.OrderedBy,
+		"ordered_at":   entry.OrderedAt.Format("2006-01-02T15:04:05Z07:00"),
+		"share_status": store.ShareStatusQueued,
 	}
 	if entry.NextRetryAt != nil {
 		response["next_retry_at"] = entry.NextRetryAt.Format("2006-01-02T15:04:05Z07:00")

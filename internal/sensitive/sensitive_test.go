@@ -60,7 +60,7 @@ func TestScan_AWS_InvalidTooShort(t *testing.T) {
 		"AKIAIOSFODNN7",
 		"AKIA1234X7",
 		"AKIA1234X7890EXMPL", // 24 chars - should still match
-		"AKIAXXAA",              // too short
+		"AKIAXXAA",           // too short
 	}
 	for _, text := range texts {
 		matches := Scan(text)
