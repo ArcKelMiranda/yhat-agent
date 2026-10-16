@@ -82,12 +82,12 @@
     <!--
       Properties
         ALLUSERS empty (no Value attr) — per-user install (no admin, no UAC prompt)
-        YHAT_INSTALL_CMD       — full install command; set by CA_Install_CMD (immediate)
-        YHAT_UNINSTALL_CMD      — full uninstall command; set by CA_ReadUninstPath (immediate)
+        YHAT_INSTALL_CMD       — set by CA_Install_CMD after CostFinalize
+        YHAT_UNINSTALL_CMD      — set by CA_ReadUninstPath after CostFinalize
     -->
     <Property Id="ALLUSERS"/>
-    <Property Id="YHAT_INSTALL_CMD"  Value="cmd /c &quot;[INSTALLFOLDER]yhat-agent.exe&quot; install --no-bandeja"/>
-    <Property Id="YHAT_UNINSTALL_CMD" Value="cmd /c &quot;[INSTALLFOLDER]yhat-agent.exe&quot; uninstall --yes"/>
+    <Property Id="YHAT_INSTALL_CMD"/>
+    <Property Id="YHAT_UNINSTALL_CMD"/>
 
     <!--
       Directory tree.
@@ -186,6 +186,19 @@
          ================================================================ -->
 
     <!--
+      CA_Install_CMD  (type 51 = SetProperty, immediate)
+      Sets YHAT_INSTALL_CMD after CostFinalize resolves INSTALLFOLDER.
+      Fires in the immediate phase after CostFinalize so [INSTALLFOLDER]
+      is already resolved. This becomes CustomActionData for CA_Install.
+    -->
+    <CustomAction
+      Id="CA_Install_CMD"
+      Property="YHAT_INSTALL_CMD"
+      Value="cmd /c &quot;[INSTALLFOLDER]yhat-agent.exe&quot; install --no-bandeja"
+      Execute="immediate"
+      Return="ignore"/>
+
+    <!--
       CA_Install  (deferred custom action)
       Runs yhat-agent install.
       WixQuietExec reads CustomActionData (= YHAT_INSTALL_CMD value).
@@ -198,6 +211,18 @@
       Execute="deferred"
       Return="check"
       Impersonate="yes"/>
+
+    <!--
+      CA_ReadUninstPath  (type 51 = SetProperty, immediate)
+      Sets YHAT_UNINSTALL_CMD after CostFinalize.
+      Registry key is still present at this point (before RemoveExistingProducts).
+    -->
+    <CustomAction
+      Id="CA_ReadUninstPath"
+      Property="YHAT_UNINSTALL_CMD"
+      Value="cmd /c &quot;[INSTALLFOLDER]yhat-agent.exe&quot; uninstall --yes"
+      Execute="immediate"
+      Return="ignore"/>
 
     <!--
       CA_Uninstall  (immediate custom action)
@@ -218,13 +243,15 @@
 
          Order for fresh install (NOT Installed):
            CostFinalize       → resolves INSTALLFOLDER
-           CA_Install_CMD     → already set via Property Value
+           CA_Install_CMD     → sets YHAT_INSTALL_CMD           (immediate)
            InstallInitialize  → starts MSI transaction
-           CA_Install         → runs yhat-agent install      (deferred)
+           CA_Install         → runs yhat-agent install         (deferred)
            [file copy, registry write]
            InstallFinalize    → commits or rolls back
 
          Order for uninstall/upgrade (Installed AND REMOVE):
+           CostFinalize       → resolves INSTALLFOLDER
+           CA_ReadUninstPath  → sets YHAT_UNINSTALL_CMD        (immediate)
            RemoveExistingProducts  → removes prior MSI files
            CA_Uninstall            → runs yhat-agent uninstall (immediate)
            [RemoveExistingProducts continues: removes files, registry]
@@ -234,12 +261,20 @@
 
     <InstallExecuteSequence>
 
-      <!-- Run yhat-agent install no-bandeja (deferred, after transaction starts). -->
+      <!-- Resolve INSTALLFOLDER and set install/uninstall commands. -->
+      <Custom Action="CA_Install_CMD" After="CostFinalize">
+        NOT Installed
+      </Custom>
+      <Custom Action="CA_ReadUninstPath" After="CostFinalize">
+        Installed AND REMOVE
+      </Custom>
+
+      <!-- Run yhat-agent install (deferred, after transaction starts). -->
       <Custom Action="CA_Install" After="InstallInitialize">
         NOT Installed
       </Custom>
 
-      <!-- Run yhat-agent uninstall yes (immediate, files still present at this point). -->
+      <!-- Run yhat-agent uninstall (immediate, files still present). -->
       <Custom Action="CA_Uninstall" After="RemoveExistingProducts">
         Installed AND REMOVE
       </Custom>
@@ -247,15 +282,11 @@
     </InstallExecuteSequence>
 
     <!--
-      UI — completely silent.
-      WixUI_InstallDir provides the standard install-dir dialogs.
-      The Publish override makes ExitDialog return immediately
-      (no finish screen, no progress bar).
+      UI — use WixUI_InstallDir for the standard install-dir dialogs.
+      Since the CA runs yhat-agent install (which writes to the user's
+      home dir), ALLUSERS empty and Impersonate=yes handle permissions.
     -->
     <UIRef Id="WixUI_InstallDir"/>
-    <UI>
-      <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999">1</Publish>
-    </UI>
 
   </Product>
 
