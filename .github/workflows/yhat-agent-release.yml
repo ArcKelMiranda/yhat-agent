@@ -270,8 +270,11 @@ jobs:
           if [ $? -ne 0 ]; then echo "ERROR: candle.exe failed"; exit 1; fi
 
           echo "Step 2/2 — light.exe"
+          # WixUtilExtension provides WixCA (WixQuietExec entry point).
+          # Both extensions ship in the WiX bin folder alongside candle.exe.
           light.exe \
             -ext WixUIExtension \
+            -ext WixUtilExtension \
             -out "dist/yhat-agent-${MSI_VERSION}-amd64.msi" \
             "dist/yhat-agent.wixobj"
           if [ $? -ne 0 ]; then echo "ERROR: light.exe failed"; exit 1; fi
