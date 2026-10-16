@@ -100,11 +100,12 @@ func extractToken(t *testing.T, urlStr string) string {
 // baseURL returns the http://host:port portion of srv.URL() (strips ?token=...).
 func baseURL(t *testing.T, urlStr string) string {
 	t.Helper()
-	i := strings.Index(urlStr, "?")
-	if i < 0 {
-		return urlStr
+	// Trim the trailing slash too: callers append "/api/..." and a "//"
+	// path makes ServeMux redirect, turning the POST into a GET.
+	if i := strings.Index(urlStr, "?"); i >= 0 {
+		urlStr = urlStr[:i]
 	}
-	return urlStr[:i]
+	return strings.TrimSuffix(urlStr, "/")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
