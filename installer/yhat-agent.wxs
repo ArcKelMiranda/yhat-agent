@@ -248,12 +248,14 @@
 
     <!--
       UI — completely silent.
-      UIRef to a minimal UI suppresses the built-in dialog chain.
+      WixUI_InstallDir provides the standard install-dir dialogs.
       The Publish override makes ExitDialog return immediately
       (no finish screen, no progress bar).
     -->
     <UIRef Id="WixUI_InstallDir"/>
-    <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999">1</Publish>
+    <UI>
+      <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999">1</Publish>
+    </UI>
 
   </Product>
 
