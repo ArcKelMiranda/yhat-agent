@@ -3,17 +3,19 @@ package share_test
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/ArcKelMiranda/yhat-agent/internal/share"
 )
 
 // ---------------------------------------------------------------------------
-// RED: write tests that capture the expected failures before implementation.
-// These are the transport-level tests that validate Send, Pull, and
-// ApplyRejection behavior.
+// LocalDirTransport tests
 // ---------------------------------------------------------------------------
 
 // TestTransport_Send_WritesJSON verifies that Send writes an atomic JSON file
@@ -163,6 +165,7 @@ func TestTransport_Pull_ReturnsTeamMemories(t *testing.T) {
 		if err := os.WriteFile(path, data, 0644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
 		}
+		_ = tp
 	}
 
 	ctx := context.Background()
@@ -243,5 +246,256 @@ func TestTransport_ApplyRejection_NoOp(t *testing.T) {
 	ctx := context.Background()
 	if err := lt.ApplyRejection(ctx, "some-id", "not approved"); err != nil {
 		t.Errorf("ApplyRejection: want nil (no-op), got %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// HTTPTransport tests (F2 client)
+// ---------------------------------------------------------------------------
+
+// TestHTTPTransport_Send_HappyPath posts a memory to /api/memories and returns 201.
+func TestHTTPTransport_Send_HappyPath(t *testing.T) {
+	var receivedPayload share.LocalPayload
+	var receivedAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedAuth = r.Header.Get("Authorization")
+		if r.Method != http.MethodPost {
+			t.Errorf("POST /api/memories: want POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/memories" {
+			t.Errorf("URL path: want /api/memories, got %s", r.URL.Path)
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("Content-Type: want application/json, got %s", r.Header.Get("Content-Type"))
+		}
+		if err := json.NewDecoder(r.Body).Decode(&receivedPayload); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+	ht, err := share.NewHTTPTransport(httpClient, srv.URL, "test-token-abc")
+	if err != nil {
+		t.Fatalf("NewHTTPTransport: %v", err)
+	}
+
+	payload := share.LocalPayload{
+		ID:        "http-test-001",
+		Origin:    "local",
+		Type:      "decision",
+		Title:     "HTTP Send Test",
+		Content:   "Content for HTTP send test.",
+		Author:    "http-tester",
+		CreatedAt: "2024-07-01T00:00:00Z",
+	}
+	ctx := context.Background()
+	if err := ht.Send(ctx, payload); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	if receivedAuth != "Bearer test-token-abc" {
+		t.Errorf("Authorization header: want 'Bearer test-token-abc', got %q", receivedAuth)
+	}
+	if receivedPayload.ID != "http-test-001" {
+		t.Errorf("payload ID: got %q", receivedPayload.ID)
+	}
+	if receivedPayload.Origin != "local" {
+		t.Errorf("payload Origin: got %q", receivedPayload.Origin)
+	}
+}
+
+// TestHTTPTransport_Send_409Conflict returns an error for duplicate memory.
+func TestHTTPTransport_Send_409Conflict(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		w.Write([]byte(`{"error":"duplicate memory"}`))
+	}))
+	defer srv.Close()
+
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+	ht, err := share.NewHTTPTransport(httpClient, srv.URL, "token")
+	if err != nil {
+		t.Fatalf("NewHTTPTransport: %v", err)
+	}
+
+	payload := share.LocalPayload{ID: "dup-id", Origin: "local", Type: "rule", Title: "Dup", Content: "Content.", Author: "t", CreatedAt: "2024-01-01T00:00:00Z"}
+	ctx := context.Background()
+	err = ht.Send(ctx, payload)
+	if err == nil {
+		t.Fatal("Send: expected non-nil error for 409")
+	}
+}
+
+// TestHTTPTransport_Pull_HappyPath fetches /api/team and returns approved memories.
+func TestHTTPTransport_Pull_HappyPath(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/team" {
+			t.Errorf("URL path: want /api/team, got %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Errorf("Authorization: got %q", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		team := []share.TeamPayload{
+			{
+				ID:            "team-001",
+				Origin:        "team",
+				Type:          "rule",
+				Title:         "Team Rule",
+				Content:       "Rule content.",
+				Author:        "team",
+				CreatedAt:     "2024-01-01T00:00:00Z",
+				TeamStatus:    "approved",
+				TeamUpdatedAt: "2024-01-02T00:00:00Z",
+			},
+			{
+				ID:            "team-002",
+				Origin:        "team",
+				Type:          "decision",
+				Title:         "Team Decision",
+				Content:       "Decision content.",
+				Author:        "team",
+				CreatedAt:     "2024-01-03T00:00:00Z",
+				TeamStatus:    "approved",
+				TeamUpdatedAt: "2024-01-04T00:00:00Z",
+			},
+		}
+		_ = json.NewEncoder(w).Encode(team)
+	}))
+	defer srv.Close()
+
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+	ht, _ := share.NewHTTPTransport(httpClient, srv.URL, "test-token")
+	ctx := context.Background()
+	result, err := ht.Pull(ctx, "")
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	if len(result.Memories) != 2 {
+		t.Errorf("Pull: want 2 memories, got %d", len(result.Memories))
+	}
+	if result.Memories[0].TeamStatus != "approved" {
+		t.Errorf("TeamStatus[0]: want 'approved', got %q", result.Memories[0].TeamStatus)
+	}
+}
+
+// TestHTTPTransport_Pull_EmptyList handles empty /api/team response.
+func TestHTTPTransport_Pull_EmptyList(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode([]share.TeamPayload{})
+	}))
+	defer srv.Close()
+
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+	ht, _ := share.NewHTTPTransport(httpClient, srv.URL, "token")
+	ctx := context.Background()
+	result, err := ht.Pull(ctx, "")
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	if len(result.Memories) != 0 {
+		t.Errorf("Pull empty: want 0, got %d", len(result.Memories))
+	}
+}
+
+// TestHTTPTransport_ApplyRejection_Stub logs Spanish line and returns nil.
+func TestHTTPTransport_ApplyRejection_Stub(t *testing.T) {
+	// ApplyRejection is a F2 stub: it must not call any HTTP endpoint.
+	// A nil server confirms no request is ever made.
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+	ht, _ := share.NewHTTPTransport(httpClient, "http://127.0.0.1:1", "token")
+	ctx := context.Background()
+	if err := ht.ApplyRejection(ctx, "some-id", "not approved"); err != nil {
+		t.Errorf("ApplyRejection: want nil stub, got %v", err)
+	}
+}
+
+// TestHTTPTransport_Send_Timeout returns a wrapped context deadline exceeded error.
+func TestHTTPTransport_Send_Timeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(5 * time.Second) // longer than the 100ms client timeout
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// Use a short timeout on the client.
+	httpClient := &http.Client{Timeout: 100 * time.Millisecond}
+	ht, _ := share.NewHTTPTransport(httpClient, srv.URL, "token")
+
+	payload := share.LocalPayload{ID: "timeout-id", Origin: "local", Type: "rule", Title: "T", Content: "C.", Author: "t", CreatedAt: "2024-01-01T00:00:00Z"}
+	ctx := context.Background()
+	err := ht.Send(ctx, payload)
+	if err == nil {
+		t.Fatal("Send with timeout: expected non-nil error")
+	}
+}
+
+// TestHTTPTransport_Send_BearerHeader verifies the bearer token is sent correctly.
+func TestHTTPTransport_Send_BearerHeader(t *testing.T) {
+	var authHeader string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+	ht, _ := share.NewHTTPTransport(httpClient, srv.URL, "operator-secret-token")
+
+	payload := share.LocalPayload{ID: "auth-test", Origin: "local", Type: "rule", Title: "T", Content: "C.", Author: "t", CreatedAt: "2024-01-01T00:00:00Z"}
+	ctx := context.Background()
+	if err := ht.Send(ctx, payload); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		t.Errorf("Authorization: want Bearer prefix, got %q", authHeader)
+	}
+	if !strings.Contains(authHeader, "operator-secret-token") {
+		t.Errorf("Authorization: want 'operator-secret-token', got %q", authHeader)
+	}
+}
+
+// TestHTTPTransport_JSONShape verifies the POST body matches LocalPayload contract.
+func TestHTTPTransport_JSONShape(t *testing.T) {
+	var got map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		// Validate required fields.
+		for _, field := range []string{"id", "origin", "type", "title", "content", "author", "created_at"} {
+			if _, ok := got[field]; !ok {
+				t.Errorf("missing field in JSON: %s", field)
+			}
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+	ht, _ := share.NewHTTPTransport(httpClient, srv.URL, "token")
+
+	payload := share.LocalPayload{
+		ID:        "shape-test-id",
+		Origin:    "local",
+		Type:      "decision",
+		Title:     "Shape Test",
+		Content:   "Content.",
+		Context:   "Optional context.",
+		Author:    "shape-tester",
+		CreatedAt: "2024-07-01T00:00:00Z",
+	}
+	ctx := context.Background()
+	if err := ht.Send(ctx, payload); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if got["origin"] != "local" {
+		t.Errorf("origin: want 'local', got %v", got["origin"])
+	}
+	if got["type"] != "decision" {
+		t.Errorf("type: want 'decision', got %v", got["type"])
 	}
 }

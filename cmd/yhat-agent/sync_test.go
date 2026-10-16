@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/ArcKelMiranda/yhat-agent/internal/share"
 	"github.com/ArcKelMiranda/yhat-agent/internal/store"
@@ -243,4 +247,149 @@ func TestSync_ExitCode_Failed(t *testing.T) {
 	// runSyncCommand returns 2 when report.Failed > 0.
 	// (We can't test the exit code directly without subprocess, but the logic is:
 	// if report.Failed > 0 { return 2 }.)
+}
+
+// TestHTTPTransport_E2E_Subprocess starts the mock F3 server as a subprocess,
+// then drives HTTPTransport.Send and HTTPTransport.Pull against it.
+// It casts 3 votes via the F3 HTTP API, then asserts the memory is approved.
+func TestHTTPTransport_E2E_Subprocess(t *testing.T) {
+	// Check that the mock F3 binary exists.
+	f3bin := "/tmp/yhat-central-bin/yhat-central"
+	if _, err := os.Stat(f3bin); os.IsNotExist(err) {
+		t.Skipf("mock F3 server not found at %s; skipping e2e test", f3bin)
+	}
+
+	port := "28083"
+	baseURL := "http://127.0.0.1:" + port
+
+	// Start the mock F3 server as a subprocess.
+	proc, err := os.StartProcess(f3bin, []string{f3bin, port}, &os.ProcAttr{
+		Files: []*os.File{nil, os.Stdout, os.Stderr},
+	})
+	if err != nil {
+		t.Fatalf("StartProcess mock F3: %v", err)
+	}
+
+	// Clean up the subprocess on test exit.
+	waitDone := make(chan struct{})
+	go func() {
+		proc.Wait()
+		close(waitDone)
+	}()
+
+	// Wait for the server to be ready (up to 5 seconds).
+	client := &http.Client{Timeout: 2 * time.Second}
+	var ready bool
+	for i := 0; i < 50; i++ {
+		time.Sleep(100 * time.Millisecond)
+		req, _ := http.NewRequest("GET", baseURL+"/api/operator/me", nil)
+		req.Header.Set("Authorization", "Bearer test-token-abc")
+		resp, err := client.Do(req)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				ready = true
+				break
+			}
+		}
+	}
+	if !ready {
+		proc.Wait()
+		t.Fatal("mock F3 server did not become ready in 5s")
+	}
+
+	// Create HTTPTransport.
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+	ht, err := share.NewHTTPTransport(httpClient, baseURL, "test-token-abc")
+	if err != nil {
+		t.Fatalf("NewHTTPTransport: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Step 1: Send a memory via HTTPTransport.Send.
+	memID := "e2e-test-memory-001"
+	payload := share.LocalPayload{
+		ID:        memID,
+		Origin:    "local",
+		Type:      "decision",
+		Title:     "E2E Test Decision",
+		Content:   "This is an end-to-end test decision.",
+		Author:    "e2e-tester",
+		CreatedAt: "2024-07-01T00:00:00Z",
+	}
+	if err := ht.Send(ctx, payload); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	// Step 2: Cast 3 approvals via the F3 HTTP API (3-of-5 quorum).
+	for i := 0; i < 3; i++ {
+		req, _ := http.NewRequestWithContext(ctx, "POST",
+			baseURL+"/api/team/"+memID+"/approve", nil)
+		req.Header.Set("Authorization", "Bearer test-token-abc")
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("vote %d: %v", i+1, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode > 299 {
+			t.Fatalf("vote %d: server returned %s", i+1, resp.Status)
+		}
+	}
+
+	// Step 3: Pull via HTTPTransport.Pull and verify the memory is approved.
+	result, err := ht.Pull(ctx, "")
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+
+	var found bool
+	for _, mem := range result.Memories {
+		if mem.ID == memID {
+			found = true
+			if mem.TeamStatus != "approved" {
+				t.Errorf("TeamStatus: want 'approved', got %q", mem.TeamStatus)
+			}
+			if mem.Origin != "team" {
+				t.Errorf("Origin: want 'team', got %q", mem.Origin)
+			}
+			if mem.Title != "E2E Test Decision" {
+				t.Errorf("Title: got %q", mem.Title)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Pull: memory %s not found in team memories; got %v", memID, result.Memories)
+	}
+
+	// Step 4: Verify /api/operator/me returns the operator name.
+	req, _ := http.NewRequestWithContext(ctx, "GET", baseURL+"/api/operator/me", nil)
+	req.Header.Set("Authorization", "Bearer test-token-abc")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("GET /api/operator/me: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/operator/me: got %s", resp.Status)
+	}
+	var operator map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&operator); err != nil {
+		t.Fatalf("decode operator response: %v", err)
+	}
+	if operator["name"] != "test-operator" {
+		t.Errorf("operator name: want 'test-operator', got %q", operator["name"])
+	}
+
+	// Clean up: signal the server to stop.
+	proc.Signal(syscall.SIGTERM)
+	// Wait for the process to exit with a timeout.
+	select {
+	case <-waitDone:
+		// Process exited cleanly.
+	case <-time.After(5 * time.Second):
+		// Force kill if it doesn't exit cleanly.
+		proc.Kill()
+	}
 }

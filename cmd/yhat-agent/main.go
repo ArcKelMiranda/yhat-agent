@@ -6,12 +6,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	yhatagent "github.com/ArcKelMiranda/yhat-agent"
 	"github.com/ArcKelMiranda/yhat-agent/internal/bandeja"
 	"github.com/ArcKelMiranda/yhat-agent/internal/config"
 	"github.com/ArcKelMiranda/yhat-agent/internal/store"
+)
+
+// Global CLI flags (parsed before subcommand routing).
+var (
+	centralTokenFlag string // --central-token=<token> overrides config.CentralToken
 )
 
 // mcpUsageNote is appended to the help text to document the experimental mcp command.
@@ -25,12 +31,18 @@ MCP (experimental F0 prototype):
 `
 
 func main() {
-	if len(os.Args) < 2 {
+	// Pull the global --central-token out (before or after the
+	// subcommand) so each subcommand's own FlagSet only sees the flags
+	// it defines.
+	var rest []string
+	centralTokenFlag, rest = extractCentralToken(os.Args[1:])
+	if len(rest) < 1 {
 		printUsage()
 		os.Exit(1)
 	}
 
-	cmd := os.Args[1]
+	cmd := rest[0]
+	args := rest[1:]
 
 	switch cmd {
 	case "bandeja":
@@ -44,10 +56,10 @@ func main() {
 	case "uninstall":
 		runUninstall()
 	case "mcp":
-		exitCode := runMCPCommand(os.Args[2:])
+		exitCode := runMCPCommand(args)
 		os.Exit(exitCode)
 	case "sync":
-		exitCode := runSyncCommand(os.Args[2:])
+		exitCode := runSyncCommand(args)
 		os.Exit(exitCode)
 	case "version", "--version", "-v":
 		runVersion()
@@ -78,10 +90,11 @@ Commands:
   help       Show this help message
 
 Options:
-  --yes        Required for uninstall to confirm destructive action
-  --json       Output status in JSON format
-  --dry-run    Show what would be done without making changes (uninstall only)
-  --no-bandeja Skip opening bandeja after install (install command only)
+  --yes            Required for uninstall to confirm destructive action
+  --json           Output status in JSON format
+  --dry-run        Show what would be done without making changes (uninstall only)
+  --no-bandeja     Skip opening bandeja after install (install command only)
+  --central-token  Override the central bearer token from config.yaml
 ` + mcpUsageNote)
 }
 
@@ -358,6 +371,50 @@ func boolStr(b bool) string {
 	return "no"
 }
 
+// extractCentralToken removes every --central-token occurrence from args
+// (accepting -/-- prefixes, "=value" and "value as next arg" forms) and
+// returns the last value seen plus the remaining args in order.
+func extractCentralToken(args []string) (string, []string) {
+	var token string
+	rest := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			rest = append(rest, args[i:]...)
+			break
+		}
+		name := strings.TrimLeft(a, "-")
+		if name == a || len(a)-len(name) > 2 {
+			rest = append(rest, a)
+			continue
+		}
+		switch {
+		case strings.HasPrefix(name, "central-token="):
+			token = strings.TrimPrefix(name, "central-token=")
+		case name == "central-token" && i+1 < len(args):
+			i++
+			token = args[i]
+		case name == "central-token":
+			// Trailing flag without a value: drop it, keep the token empty.
+		default:
+			rest = append(rest, a)
+		}
+	}
+	return token, rest
+}
+
+// getCentralToken returns the CLI token flag if set, otherwise the config token.
+// If cfg is nil, only the flag is checked.
+func getCentralToken(cfg *config.Config) string {
+	if centralTokenFlag != "" {
+		return centralTokenFlag
+	}
+	if cfg != nil {
+		return cfg.CentralToken
+	}
+	return ""
+}
+
 // cerebroStatus holds the F1-C Cerebro data read by runStatus.
 type cerebroStatus struct {
 	HomePath    string
@@ -493,16 +550,30 @@ func runInstallF1() error {
 		operator = "unknown"
 	}
 
-	// Central repo URL: use env override or placeholder.
-	centralRepo := os.Getenv("YHAT_CENTRAL_URL")
-	if centralRepo == "" {
+	// Determine central URL and transport scheme.
+	// Priority: YHAT_CENTRAL_URL env > existing central_repo > placeholder.
+	centralURL := os.Getenv("YHAT_CENTRAL_URL")
+	var centralRepo string
+	var centralToken string
+
+	if centralURL != "" {
+		// YHAT_CENTRAL_URL set: use as HTTP transport URL.
+		// Token from YHAT_CENTRAL_TOKEN env var, or leave change-me placeholder.
+		centralToken = os.Getenv("YHAT_CENTRAL_TOKEN")
+		if centralToken == "" {
+			centralToken = "change-me"
+		}
+	} else {
+		// No YHAT_CENTRAL_URL: use placeholder as central_repo (legacy local-dir path).
 		centralRepo = "https://centro.example.invalid"
 	}
 
 	cfg := config.Config{
-		Operator:    operator,
-		CentralRepo: centralRepo,
-		LastSync:    "",
+		Operator:     operator,
+		CentralRepo:  centralRepo,
+		CentralURL:   centralURL,
+		CentralToken: centralToken,
+		LastSync:     "",
 	}
 	if err := cfg.Save(config.ConfigPath()); err != nil {
 		return fmt.Errorf("write config.yaml: %w", err)
