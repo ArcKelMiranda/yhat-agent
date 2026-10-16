@@ -28,9 +28,11 @@ import (
 // Config holds the operator-supplied Cerebro configuration.
 // It is serialised to YAML at $YHAT_HOME/config.yaml.
 type Config struct {
-	Operator    string `yaml:"operator"`
-	CentralRepo string `yaml:"central_repo"`
-	LastSync    string `yaml:"last_sync"`
+	Operator     string `yaml:"operator"`
+	CentralRepo  string `yaml:"central_repo"`  // legacy local-dir path or placeholder URL
+	CentralURL   string `yaml:"central_url"`   // F2 HTTP transport base URL (e.g. https://yhat-central:8080)
+	CentralToken string `yaml:"central_token"` // F2 bearer token for the HTTP transport
+	LastSync     string `yaml:"last_sync"`
 }
 
 // State holds the runtime state written by the install command.

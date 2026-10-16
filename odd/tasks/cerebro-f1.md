@@ -124,6 +124,27 @@ that writes `config.yaml` from the operator's Windows identity.
 - User chose this turn: subcommand + auto-open on install;
   reject reason optional; Enviados shows estado y razón.
 
+#### F1-D bandeja bug (resolved)
+
+**Resolved on 2026-10-16 in `feat/cerebro-f2-http`.** The earlier
+note ("3 RED tests since `c54642c`") was wrong: 14 of 26 bandeja
+tests failed since the original F1-D commit `226d1ee`, so F1 was
+merged to `main` with Aprobar/Rechazar/Editar broken. Two bugs
+combined:
+
+1. Production: the mutation routes were registered only as
+   `/api/approve/`, `/api/reject/`, `/api/edit/`, while the page JS
+   posts to `/api/approve` (no slash). ServeMux answers with a 301,
+   the browser follows it as a GET, and `withMethod("POST")` returns
+   405 "method not allowed". Fix: register the routes without the
+   trailing slash (the id travels in the JSON body).
+2. Tests: the `baseURL` helper kept the trailing slash of
+   `http://addr/?token=...`, so tests requested `//api/approve`,
+   which ServeMux also redirects. Fix: trim the slash.
+
+Both fixes are needed: with only the helper fixed, 17 tests still
+fail. All 26 bandeja tests pass now.
+
 ### F1-E. Sensitive-content filter (~0.5 day)
 - [x] F1-E landed on `feat/cerebro-f1` as commit `3c85c8a`
   (646 insertions, 4 files). Windows build SHA-256
@@ -237,3 +258,106 @@ that writes `config.yaml` from the operator's Windows identity.
 - Power BI, semantic search, update mechanism.
 - Migration of any data from the F0 store (the F0 store
   has no persistent file; nothing to migrate).
+
+---
+
+# Cerebro YHat v1.2 — F2-cliente HTTPTransport
+
+## Status
+- Branch: `feat/cerebro-f2-http` from `feat/cerebro-f2` (commit
+  `c54642c feat(share): F2 share_memory, sync, and central-api contract`).
+- Implementation: done. Verifier passed. 8 new HTTPTransport tests +
+  2 config round-trip tests + 4 main integration tests + 1 subprocess
+  e2e against a mock F3 server on `:28083`.
+- Windows CGO-free build: SHA-256
+  `0bba2eb42c9018a87afd1f7e92f41c4025569a0350fd58426427f82647b0e967`.
+- F0 baseline: `mcp --selftest` still returns Política Fixture Beta.
+- **Status: committed** on `feat/cerebro-f2-http` together with
+  the F1-D fix (see "F1-D bandeja bug (resolved)" above) and a
+  rewrite of the global `--central-token` parsing: the previous
+  `flag.FlagSet` parsed subcommand args (noise on
+  `mcp --selftest`, token ignored after other flags, stray value
+  left behind with `--central-token X`). `extractCentralToken` now
+  removes the flag from any position, before or after the
+  subcommand.
+- Windows CGO-free build (`-trimpath`) after these fixes: SHA-256
+  `722f1b0fee7ba784f1ee74c9a45591147339c877c9c7651d56dd07c89d1c246b`.
+
+## User constraints
+- No commits to `main` until the user pushes them.
+- No change to the F3 server (lives at `/tmp/yhat-central`).
+- No change to F0, F1, MSI.
+
+## Implementation summary
+
+### Config fields (`internal/config/config.go`)
+- `Config.CentralURL string` — F2 HTTP transport base URL
+  (e.g. `https://yhat-central.example.local:8080`). YAML tag
+  `central_url`. Round-trips through Save/Load.
+- `Config.CentralToken string` — Bearer token per operator. YAML
+  tag `central_token`. Round-trips through Save/Load.
+
+### HTTPTransport (`internal/share/transport.go`)
+- `NewHTTPTransport(client *http.Client, baseURL, token)` — constructor.
+  Strips trailing slash from baseURL.
+- `HTTPTransport.Send` → `POST /api/memories` with `LocalPayload` JSON.
+  Returns nil on 2xx; propagates non-2xx as
+  `fmt.Errorf("HTTPTransport.Send: server returned %s", resp.Status)`.
+- `HTTPTransport.Pull` → `GET /api/team` returning `[]TeamPayload`.
+  `NextCursor` is empty for F2 (F3 will add server-side cursor).
+- `HTTPTransport.ApplyRejection` — F2 stub. Logs a Spanish comment and
+  returns nil. F3 will implement `POST /api/rejections`.
+- `NewTransport(url, token)` — factory: `http://`/`https://` →
+  `HTTPTransport`; anything else → `LocalDirTransport`.
+- 15-second timeout per request (set on the `http.Client`).
+- Bearer token sent as `Authorization: Bearer <token>` on every request.
+
+### Config write (`cmd/yhat-agent/main.go` — `runInstallF1`)
+- When `YHAT_CENTRAL_URL` env var is set → writes `central_url` and
+  `central_token` (from `YHAT_CENTRAL_TOKEN` if set, else `"change-me"`
+  placeholder).
+- When `YHAT_CENTRAL_URL` is not set → `central_repo` is set to the
+  placeholder, `central_url` and `central_token` are empty.
+
+### CLI flags (`cmd/yhat-agent/main.go`)
+- `--central-token=<token>` — global flag parsed before subcommand routing.
+  Overrides `config.CentralToken` at runtime.
+- `--central-url=<url>` on `sync` — overrides both `central_url` and
+  `central_repo` from config.
+- `--central-repo=<path>` on `sync` — preserved for backward compat;
+  overrides `central_repo` from config.
+
+### Sync dispatcher (`cmd/yhat-agent/sync.go`)
+- `runBackgroundSyncOnce` and `runSyncCommand` both use `share.NewTransport`
+  (URL-scheme-based factory) with the resolved URL and token.
+- Resolution order: CLI flags (`--central-url` > `--central-repo`) >
+  config (`central_url` > `central_repo`) > placeholder.
+
+### Tests
+- `internal/share/transport_test.go`: 8 new HTTPTransport tests covering
+  happy path, 409 duplicate, Pull empty list, Pull team approvals, timeout,
+  bearer header verification, JSON shape validation, and ApplyRejection stub.
+- `internal/config/config_test.go`: 2 new round-trip tests for
+  `CentralURL`/`CentralToken`.
+- `cmd/yhat-agent/main_test.go`: 4 new tests for install with env vars,
+  `getCentralToken` CLI override, and `getCentralToken` fallback.
+- `cmd/yhat-agent/sync_test.go`: `TestHTTPTransport_E2E_Subprocess` —
+  subprocess test that starts the mock F3 server binary at
+  `/tmp/yhat-central-bin/yhat-central` on `:28083`, sends a memory via
+  `HTTPTransport.Send`, casts 3 votes via the F3 HTTP API, then pulls
+  `/api/team` and asserts the memory is approved.
+
+### End-to-end verification
+- `CGO_ENABLED=0 go test -count=1 ./internal/share` — all 15 tests pass.
+- `CGO_ENABLED=0 go test -count=1 ./internal/config` — all 9 tests pass.
+- `CGO_ENABLED=0 go test -count=1 ./cmd/yhat-agent` — all 18 tests pass.
+- `CGO_ENABLED=0 go vet ./...` — clean.
+- `yhat-agent mcp --selftest` — F0 Política Fixture Beta passes.
+
+## Out of scope
+
+- Changes to the F3 server (separate repo at `/tmp/yhat-central`).
+- F4/F5 features.
+- TLS termination, mTLS.
+- Bulk migration tooling from LocalDirTransport to HTTPTransport.
+- Per-operator team approval (handled by F3 quorum).

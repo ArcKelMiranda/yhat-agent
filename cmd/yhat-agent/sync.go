@@ -86,16 +86,20 @@ func runBackgroundSyncOnce(ctx context.Context) {
 		return
 	}
 
-	// Read central_repo from config.
+	// Read central config. Use central_url if set, otherwise central_repo.
 	cfg, err := config.Load(config.ConfigPath())
 	if err != nil {
 		return
 	}
-	if cfg.CentralRepo == "" || cfg.CentralRepo == "https://centro.example.invalid" {
+	centralURL := cfg.CentralURL
+	if centralURL == "" {
+		centralURL = cfg.CentralRepo
+	}
+	if centralURL == "" || centralURL == "https://centro.example.invalid" {
 		return
 	}
 
-	lt, err := share.NewLocalDirTransport(cfg.CentralRepo)
+	lt, err := share.NewTransport(centralURL, cfg.CentralToken)
 	if err != nil {
 		return
 	}
@@ -121,14 +125,19 @@ func runSyncCommand(args []string) int {
 	fs := flag.NewFlagSet("yhat-agent sync", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: yhat-agent sync [--central-repo=<dir>]")
+		fmt.Fprintln(os.Stderr, "Usage: yhat-agent sync [--central-url=<url>] [--central-repo=<dir>]")
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "  Drains the upload queue, sends memories to the central repository,")
 		fmt.Fprintln(os.Stderr, "  and pulls team-approved memories. Prints a summary on stdout.")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "  Transport is selected by URL scheme: http:// or https:// selects")
+		fmt.Fprintln(os.Stderr, "  HTTPTransport; any other value uses LocalDirTransport.")
 	}
 
 	var centralRepoFlag string
-	fs.StringVar(&centralRepoFlag, "central-repo", "", "override central repository directory")
+	var centralURLFlag string
+	fs.StringVar(&centralRepoFlag, "central-repo", "", "override central repository URL or path")
+	fs.StringVar(&centralURLFlag, "central-url", "", "override central HTTP URL (e.g. https://yhat-central:8080)")
 
 	if err := fs.Parse(args); err != nil {
 		return 1
@@ -140,18 +149,32 @@ func runSyncCommand(args []string) int {
 
 	ctx := context.Background()
 
-	// Resolve central_repo: flag > config > placeholder.
-	centralRepo := centralRepoFlag
-	if centralRepo == "" {
+	// Resolve central: flag (central-url > central-repo) > config > placeholder.
+	centralURL := centralURLFlag
+	if centralURL == "" {
+		centralURL = centralRepoFlag
+	}
+	var token string
+	if centralURL == "" {
 		cfg, err := config.Load(config.ConfigPath())
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "sync: cannot load config: %v\n", err)
 			return 1
 		}
-		centralRepo = cfg.CentralRepo
+		// Prefer central_url if set (HTTP transport), otherwise fall back to central_repo.
+		centralURL = cfg.CentralURL
+		if centralURL == "" {
+			centralURL = cfg.CentralRepo
+		}
+		token = cfg.CentralToken
+	} else {
+		// When CLI overrides URL, use CLI token (from --central-token global flag)
+		// or fall back to config token.
+		cfg, _ := config.Load(config.ConfigPath())
+		token = getCentralToken(cfg)
 	}
-	if centralRepo == "" || centralRepo == "https://centro.example.invalid" {
-		// No central repo configured; nothing to do.
+	if centralURL == "" || centralURL == "https://centro.example.invalid" {
+		// No central configured; nothing to do.
 		fmt.Println("0 sent, 0 failed, 0 skipped")
 		return 0
 	}
@@ -169,8 +192,8 @@ func runSyncCommand(args []string) int {
 	}
 	defer s.Close()
 
-	// Create transport.
-	lt, err := share.NewLocalDirTransport(centralRepo)
+	// Create transport based on URL scheme.
+	lt, err := share.NewTransport(centralURL, token)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "sync: create transport: %v\n", err)
 		return 1

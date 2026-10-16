@@ -169,10 +169,20 @@ operator-grade tasks from tests 3 to 7. Branch
 `feat/cerebro-f1` was deleted locally and remotely; the
 active branch is `main` at commit `201ca9e`.
 
+## Bandeja fix required for Tests 3 and 4
+
+The Aprobar / Rechazar / Editar buttons were broken in every build
+up to `c54642c` (405 "method not allowed"): the routes were
+registered with a trailing slash and the browser followed the 301
+redirect as a GET. Fixed on `feat/cerebro-f2-http` (see
+"F1-D bandeja bug (resolved)" in `odd/tasks/cerebro-f1.md`).
+Run Tests 3 and 4 with a binary built after that fix.
+
 ## What this document does not cover
 
 - Performance benchmarks (the G1 200 ms latency requirement
   from the PRD is not in F1 scope).
-- F2 share/sync (depends on F3 server contract, blocked).
+- F2 share/sync (depends on F3 server contract, blocked
+  on the F1-D bug fix + the F3 repo existing on GitHub).
 - The F3 server, F4 Power BI, F5 semantic search (out of
   scope, deferred).

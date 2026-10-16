@@ -335,3 +335,142 @@ func TestRunStatusCerebroTextOutput(t *testing.T) {
 		t.Error("output missing 'Last sync:'")
 	}
 }
+
+// RED: runInstallF1 writes CentralURL and CentralToken from env vars.
+func TestRunInstallF1_CentralURLAndToken(t *testing.T) {
+	dir := t.TempDir()
+	origYHAT := os.Getenv("YHAT_HOME")
+	origUSER := os.Getenv("USER")
+	origCentralURL := os.Getenv("YHAT_CENTRAL_URL")
+	origCentralToken := os.Getenv("YHAT_CENTRAL_TOKEN")
+	os.Setenv("YHAT_HOME", dir)
+	os.Setenv("USER", "test-op")
+	os.Setenv("YHAT_CENTRAL_URL", "https://yhat-central.example.local:8080")
+	os.Setenv("YHAT_CENTRAL_TOKEN", "my-secret-token")
+	defer func() {
+		os.Setenv("YHAT_HOME", origYHAT)
+		os.Setenv("USER", origUSER)
+		if origCentralURL != "" {
+			os.Setenv("YHAT_CENTRAL_URL", origCentralURL)
+		} else {
+			os.Unsetenv("YHAT_CENTRAL_URL")
+		}
+		if origCentralToken != "" {
+			os.Setenv("YHAT_CENTRAL_TOKEN", origCentralToken)
+		} else {
+			os.Unsetenv("YHAT_CENTRAL_TOKEN")
+		}
+	}()
+
+	if err := runInstallF1(); err != nil {
+		t.Fatalf("runInstallF1: %v", err)
+	}
+
+	cfg, err := config.Load(filepath.Join(dir, "config.yaml"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.CentralURL != "https://yhat-central.example.local:8080" {
+		t.Errorf("CentralURL: got %q, want %q", cfg.CentralURL, "https://yhat-central.example.local:8080")
+	}
+	if cfg.CentralToken != "my-secret-token" {
+		t.Errorf("CentralToken: got %q, want %q", cfg.CentralToken, "my-secret-token")
+	}
+	if cfg.CentralRepo != "" {
+		t.Errorf("CentralRepo: got %q, want empty when CentralURL is set", cfg.CentralRepo)
+	}
+}
+
+// RED: when YHAT_CENTRAL_TOKEN is not set, CentralToken defaults to change-me placeholder.
+func TestRunInstallF1_CentralTokenDefault(t *testing.T) {
+	dir := t.TempDir()
+	origYHAT := os.Getenv("YHAT_HOME")
+	origUSER := os.Getenv("USER")
+	origCentralURL := os.Getenv("YHAT_CENTRAL_URL")
+	origCentralToken := os.Getenv("YHAT_CENTRAL_TOKEN")
+	os.Setenv("YHAT_HOME", dir)
+	os.Setenv("USER", "test-op")
+	os.Setenv("YHAT_CENTRAL_URL", "https://central.example.local")
+	os.Unsetenv("YHAT_CENTRAL_TOKEN")
+	defer func() {
+		os.Setenv("YHAT_HOME", origYHAT)
+		os.Setenv("USER", origUSER)
+		if origCentralURL != "" {
+			os.Setenv("YHAT_CENTRAL_URL", origCentralURL)
+		} else {
+			os.Unsetenv("YHAT_CENTRAL_URL")
+		}
+		if origCentralToken != "" {
+			os.Setenv("YHAT_CENTRAL_TOKEN", origCentralToken)
+		}
+	}()
+
+	if err := runInstallF1(); err != nil {
+		t.Fatalf("runInstallF1: %v", err)
+	}
+
+	cfg, err := config.Load(filepath.Join(dir, "config.yaml"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.CentralToken != "change-me" {
+		t.Errorf("CentralToken: got %q, want 'change-me' placeholder", cfg.CentralToken)
+	}
+}
+
+// RED: getCentralToken returns the CLI flag when set, overriding config.
+func TestGetCentralToken_OverridesConfig(t *testing.T) {
+	cfg := &config.Config{CentralToken: "config-token"}
+
+	// Save original flag value.
+	orig := centralTokenFlag
+	centralTokenFlag = "cli-token"
+	defer func() { centralTokenFlag = orig }()
+
+	got := getCentralToken(cfg)
+	if got != "cli-token" {
+		t.Errorf("getCentralToken: got %q, want CLI flag value 'cli-token'", got)
+	}
+}
+
+// RED: getCentralToken falls back to config token when CLI flag is empty.
+func TestGetCentralToken_FallsBackToConfig(t *testing.T) {
+	cfg := &config.Config{CentralToken: "config-token"}
+
+	// Save original flag value.
+	orig := centralTokenFlag
+	centralTokenFlag = ""
+	defer func() { centralTokenFlag = orig }()
+
+	got := getCentralToken(cfg)
+	if got != "config-token" {
+		t.Errorf("getCentralToken: got %q, want config token 'config-token'", got)
+	}
+}
+
+// extractCentralToken pulls the global flag out of any position and
+// leaves subcommand flags untouched.
+func TestExtractCentralToken(t *testing.T) {
+	cases := []struct {
+		in        []string
+		wantToken string
+		wantRest  []string
+	}{
+		{nil, "", nil},
+		{[]string{"--selftest"}, "", []string{"--selftest"}},
+		{[]string{"--central-token=abc", "--selftest"}, "abc", []string{"--selftest"}},
+		{[]string{"--central-url=http://x", "--central-token=abc"}, "abc", []string{"--central-url=http://x"}},
+		{[]string{"--central-token", "abc", "--once"}, "abc", []string{"--once"}},
+		{[]string{"-central-token=abc"}, "abc", nil},
+		{[]string{"--central-token"}, "", nil},
+		{[]string{"--", "--central-token=abc"}, "", []string{"--", "--central-token=abc"}},
+		{[]string{"---central-token=abc"}, "", []string{"---central-token=abc"}},
+	}
+	for _, c := range cases {
+		token, rest := extractCentralToken(c.in)
+		if token != c.wantToken || strings.Join(rest, "|") != strings.Join(c.wantRest, "|") {
+			t.Errorf("extractCentralToken(%q) = %q, %q; want %q, %q",
+				c.in, token, rest, c.wantToken, c.wantRest)
+		}
+	}
+}

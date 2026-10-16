@@ -11,3 +11,6 @@ yhat-agent_windows_*
 
 # Local Pi runtime state
 .atl/
+
+# Local code-graph index
+.codegraph/

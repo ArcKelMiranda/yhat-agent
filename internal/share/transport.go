@@ -6,13 +6,18 @@
 package share
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
+	"time"
 )
 
 // ---------------------------------------------------------------------------
@@ -70,7 +75,7 @@ type PullResult struct {
 
 // Transport abstracts the central repository operations for the sync loop.
 // Two implementations exist: LocalDirTransport (F2, file-based) and
-// an HTTP transport (future F3 once the server exists).
+// HTTPTransport (F2 HTTP client → F3 server).
 type Transport interface {
 	// Send uploads a single memory to the central repository.
 	// The memory is serialised as LocalPayload and written atomically.
@@ -174,7 +179,6 @@ func (lt *LocalDirTransport) Send(ctx context.Context, payload LocalPayload) err
 // store.SetSyncState method passed as a callback.
 //
 // The cursor is the filename (without extension) of the last processed entry.
-// A nil onCursorStore function disables cursor persistence (test mode).
 //
 // For F2: Pull reads <root>/team/*.json files. Each file's name (without .json)
 // is the remote_id. The next cursor is the filename of the highest entry
@@ -226,6 +230,136 @@ func (lt *LocalDirTransport) Pull(ctx context.Context, cursor string) (PullResul
 // ApplyRejection is a no-op for F2. The protocol is documented for F3.
 func (lt *LocalDirTransport) ApplyRejection(ctx context.Context, id, reason string) error {
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// HTTPTransport
+// ---------------------------------------------------------------------------
+
+// HTTPTransport is an F2/F3 client transport that speaks HTTP.
+// It sends memories to POST /api/memories and pulls approved memories from
+// GET /api/team using bearer-token authentication.
+//
+// It satisfies the Transport interface.
+type HTTPTransport struct {
+	client  *http.Client
+	baseURL string // stripped of trailing slash
+	token   string
+}
+
+// NewHTTPTransport creates an HTTPTransport.
+// client must be non-nil; 15s timeout is recommended.
+// baseURL must not have a trailing slash (trailing slash is stripped automatically).
+// token is the bearer token sent as Authorization: Bearer <token>.
+func NewHTTPTransport(client *http.Client, baseURL, token string) (*HTTPTransport, error) {
+	ht := &HTTPTransport{
+		client:  client,
+		baseURL: strings.TrimSuffix(baseURL, "/"),
+		token:   token,
+	}
+	return ht, nil
+}
+
+// newRequest builds an http.Request with the bearer token header.
+func (ht *HTTPTransport) newRequest(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, ht.baseURL+path, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+ht.token)
+	req.Header.Set("Content-Type", "application/json")
+	return req, nil
+}
+
+// Send posts the LocalPayload to POST /api/memories.
+// Returns nil on 2xx; propagates all other status codes as errors.
+func (ht *HTTPTransport) Send(ctx context.Context, payload LocalPayload) error {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("json.Marshal: %w", err)
+	}
+
+	req, err := ht.newRequest(ctx, http.MethodPost, "/api/memories", bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("NewRequest: %w", err)
+	}
+
+	resp, err := ht.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("client.Do: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Any non-2xx status is an error that bubbles up as last_error.
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fmt.Errorf("HTTPTransport.Send: server returned %s", resp.Status)
+	}
+	return nil
+}
+
+// Pull fetches team-approved memories from GET /api/team.
+// The cursor parameter is sent as the cursor query param.
+// Returns PullResult with the team memories; NextCursor is empty for F2.
+func (ht *HTTPTransport) Pull(ctx context.Context, cursor string) (PullResult, error) {
+	path := "/api/team"
+	if cursor != "" {
+		path = "/api/team?cursor=" + cursor
+	}
+
+	req, err := ht.newRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return PullResult{}, fmt.Errorf("NewRequest: %w", err)
+	}
+
+	resp, err := ht.client.Do(req)
+	if err != nil {
+		return PullResult{}, fmt.Errorf("client.Do: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return PullResult{}, fmt.Errorf("HTTPTransport.Pull: server returned %s", resp.Status)
+	}
+
+	var memories []TeamPayload
+	if err := json.NewDecoder(resp.Body).Decode(&memories); err != nil {
+		return PullResult{}, fmt.Errorf("decode /api/team response: %w", err)
+	}
+
+	return PullResult{Memories: memories, NextCursor: ""}, nil
+}
+
+// ApplyRejection is a F2 stub: it logs a Spanish no-op line and returns nil.
+// The F3 protocol for posting rejections is not yet implemented.
+//
+//	F2 stub: ApplyRejection no-post — protocolo F3 aún no implementado.
+func (ht *HTTPTransport) ApplyRejection(ctx context.Context, id, reason string) error {
+	// F2 stub: ApplyRejection no-post — protocolo F3 aún no implementado.
+	// When F3 implements POST /api/rejections, this stub will be replaced
+	// with the real HTTP call.
+	return nil
+}
+
+// BaseURL returns the transport's base URL (for debugging/testing).
+func (ht *HTTPTransport) BaseURL() string { return ht.baseURL }
+
+// Token returns the configured bearer token (for debugging/testing).
+func (ht *HTTPTransport) Token() string { return ht.token }
+
+// ---------------------------------------------------------------------------
+// Transport factory
+// ---------------------------------------------------------------------------
+
+// NewTransport returns the appropriate Transport for the given URL.
+// If url starts with "http://" or "https://", it returns HTTPTransport
+// using the provided http.Client (default 15s timeout) and token.
+// Otherwise it returns LocalDirTransport rooted at url.
+func NewTransport(url string, token string) (Transport, error) {
+	if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
+		client := &http.Client{Timeout: 15 * time.Second}
+		return NewHTTPTransport(client, url, token)
+	}
+	return NewLocalDirTransport(url)
 }
 
 // ---------------------------------------------------------------------------

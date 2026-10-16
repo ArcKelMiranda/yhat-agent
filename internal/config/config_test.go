@@ -100,6 +100,55 @@ func TestEnsureDir(t *testing.T) {
 	}
 }
 
+// RED: CentralURL and CentralToken round-trip through Save/Load.
+func TestConfigCentralURLTokenRoundTrip(t *testing.T) {
+	cfg := Config{
+		Operator:     "test-op",
+		CentralRepo:  "https://centro.example.invalid",
+		CentralURL:   "https://yhat-central.example.local:8080",
+		CentralToken: "secret-token-abc123",
+		LastSync:     "2025-07-01T12:00:00Z",
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := cfg.Save(path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.CentralURL != cfg.CentralURL {
+		t.Errorf("CentralURL: got %q, want %q", loaded.CentralURL, cfg.CentralURL)
+	}
+	if loaded.CentralToken != cfg.CentralToken {
+		t.Errorf("CentralToken: got %q, want %q", loaded.CentralToken, cfg.CentralToken)
+	}
+}
+
+// RED: CentralURL and CentralToken default to empty strings when not set.
+func TestConfigCentralURLTokenDefaults(t *testing.T) {
+	cfg := Config{
+		Operator:    "op",
+		CentralRepo: "/tmp/central",
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := cfg.Save(path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.CentralURL != "" {
+		t.Errorf("CentralURL default: got %q, want empty", loaded.CentralURL)
+	}
+	if loaded.CentralToken != "" {
+		t.Errorf("CentralToken default: got %q, want empty", loaded.CentralToken)
+	}
+}
+
 // RED: YHAT_HOME env overrides default.
 func TestDefaultHomeYHAT_HOME(t *testing.T) {
 	orig := os.Getenv("YHAT_HOME")

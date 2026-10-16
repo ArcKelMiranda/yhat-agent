@@ -12,6 +12,60 @@
   registered, `fts5_search` returns the expected fixture, and
   `mcp --selftest` passes.
 
+## Updated state at session end (2026-10-08, after F1 + MSI + F2 + F3 + F2-HTTPTransport)
+
+- `main` is at `2b9ebbc` and matches `origin/main` (no F1 merge pushed yet
+  in this session; the F1 merge to main is `b007ad2`).
+- Tags: `v0.1.0` to `v0.1.4` (F0 legacy), `v0.2.0-f0` (F0 prototype),
+  `v0.3.0-f1` (F1 capture + inbox, merged in `b007ad2`).
+- `feat/cerebro-f1` was deleted locally and remotely after the F1
+  merge. The active branch is `main` plus `feat/cerebro-f2-http`
+  (committed 2026-10-16 together with the F1-D fix; see
+  "F1-D bandeja bug (resolved)" below).
+- F1 sub-tasks A through E are merged and verified. F1-F is the
+  manual WorkSpace regression runbook in
+  `odd/tasks/cerebro-f1f.md` and is pending until the user runs
+  the 8 tests in the WorkSpace and reports back.
+- The MSI installer landed as commit `0fbb897`. F2-LocalDirTransport
+  landed as commit `c54642c`. F3 server (yhat-central) was built at
+  `/tmp/yhat-central` (separate repo, branch `master`, commit
+  `ea5481f`, 20 tests) but was never pushed, and **as of 2026-10-16
+  its source is gone** (`/tmp` was cleaned). Only the compiled
+  binary and `mock_f3_server.go` survive in `/tmp/yhat-central-bin/`.
+  F3 must be recovered from another copy or rebuilt from the
+  contract in `docs/central-api.md`.
+- The F2-HTTPTransport is implemented in
+  `internal/share/transport.go` on `feat/cerebro-f2-http`. The
+  verifier-independent reports 8 new HTTPTransport tests + 2 config
+  round-trip tests + 4 main integration tests + 1 subprocess e2e
+  against a mock F3 server on `:28083`. The Windows CGO-free
+  build SHA-256 (`-trimpath`, after the F1-D and flag fixes) is
+  `722f1b0fee7ba784f1ee74c9a45591147339c877c9c7651d56dd07c89d1c246b`.
+  F0 baseline still passes. Committed on `feat/cerebro-f2-http`;
+  not merged to `main` yet. The e2e test skips itself when the F3
+  binary in `/tmp/yhat-central-bin/` is missing.
+
+## F1-D bandeja bug (resolved)
+
+**Resolved on 2026-10-16 in `feat/cerebro-f2-http`.** The earlier
+note ("3 RED tests since `c54642c`") was wrong: 14 of 26 bandeja
+tests failed since the original F1-D commit `226d1ee`, so F1 was
+merged to `main` with Aprobar/Rechazar/Editar broken. Two bugs
+combined:
+
+1. Production: the mutation routes were registered only as
+   `/api/approve/`, `/api/reject/`, `/api/edit/`, while the page JS
+   posts to `/api/approve` (no slash). ServeMux answers with a 301,
+   the browser follows it as a GET, and `withMethod("POST")` returns
+   405 "method not allowed". Fix: register the routes without the
+   trailing slash (the id travels in the JSON body).
+2. Tests: the `baseURL` helper kept the trailing slash of
+   `http://addr/?token=...`, so tests requested `//api/approve`,
+   which ServeMux also redirects. Fix: trim the slash.
+
+Both fixes are needed: with only the helper fixed, 17 tests still
+fail. All 26 bandeja tests pass now.
+
 ## PRD open questions (all 7 answered, observation 411)
 
 1. **Central repository** → **new dedicated service**. F3 is
@@ -68,19 +122,27 @@
 - `sync` subcommand runs at Claude Desktop open and every 15
   minutes, with cursor in `sync_state` so partial failures do not
   re-upload already-synced memories.
-- The API contract is documented against the new dedicated F3
-  service (still greenfield; design here unlocks the F3 estimate).
+- `LocalDirTransport` writes each enqueued memory to
+  `<central_repo>/<memory_id>.json` and reads team files from
+  `<central_repo>/team/`. Suitable for local dev and legacy.
+- `HTTPTransport` (on `feat/cerebro-f2-http`) speaks HTTP
+  against the F3 server with bearer auth, 15s timeout, and
+  factory dispatch by URL scheme. Suitable for production.
+- The API contract is documented in `docs/central-api.md`.
 
 ## F3 scope (team approval, greenfield server)
 
 - New repository, new codebase. Only the contract from F2 is
   inherited; the server has no client-side coupling.
-- 3-of-5 quorum over a roster registered in `config.yaml` on
+- 3-of-5 quorum over a roster registered in `operators.yaml` on
   the server side.
 - Rejection reason captured at vote time; surfaced through the
   F2 sync envelope so the author's bandeja shows it.
-- Estimate: not yet possible without the server tech choice.
-  Tracked in `odd/tasks/cerebro-f3.md` once the user picks.
+- yhat-central was implemented at `/tmp/yhat-central` (commit
+  `ea5481f`, 20 tests, local e2e smoke test passed) but never
+  pushed; its source was lost when `/tmp` was cleaned (found on
+  2026-10-16). Once recovered or rebuilt, keep it outside `/tmp`
+  and push it to `github.com/ArcKelMiranda/yhat-central`.
 
 ## F4 (Power BI) and F5 (semantic search)
 

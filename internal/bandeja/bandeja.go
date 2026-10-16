@@ -64,37 +64,32 @@ func Start(ctx context.Context, s *store.Store) (*Server, error) {
 
 	operator := resolveOperator()
 
-	mux.HandleFunc("/", withToken(func(w http.ResponseWriter, r *http.Request, _ string) {
+	mux.HandleFunc("/", withMethod("GET", withToken(func(w http.ResponseWriter, r *http.Request, _ string) {
 		srv.lastMu.Lock()
 		srv.lastReq = time.Now()
 		srv.lastMu.Unlock()
-		if r.Method == http.MethodGet {
-			handlePage(w, r, s, operator)
-		} else {
-			http.NotFound(w, r)
-		}
-	}, srv.token))
+		handlePage(w, r, s, operator)
+	}, srv.token)))
 
-	mux.HandleFunc("/api/approve", withToken(func(w http.ResponseWriter, r *http.Request, _ string) {
-		srv.lastMu.Lock()
-		srv.lastReq = time.Now()
-		srv.lastMu.Unlock()
-		handleApprove(w, r, s, operator)
-	}, srv.token))
-
-	mux.HandleFunc("/api/reject", withToken(func(w http.ResponseWriter, r *http.Request, _ string) {
-		srv.lastMu.Lock()
-		srv.lastReq = time.Now()
-		srv.lastMu.Unlock()
-		handleReject(w, r, s, operator)
-	}, srv.token))
-
-	mux.HandleFunc("/api/edit", withToken(func(w http.ResponseWriter, r *http.Request, _ string) {
-		srv.lastMu.Lock()
-		srv.lastReq = time.Now()
-		srv.lastMu.Unlock()
-		handleEdit(w, r, s, operator)
-	}, srv.token))
+	// All mutations require POST. The withMethod helper rejects other
+	// methods with 405 before the handler runs, which is the standard
+	// HTTP behaviour. Routes are registered without a trailing slash
+	// (the id travels in the JSON body): a "/api/<op>/" pattern makes
+	// ServeMux answer "/api/<op>" with a 301, and clients follow a 301
+	// on POST as a GET, which withMethod then rejects with 405.
+	methods := map[string]func(http.ResponseWriter, *http.Request, *store.Store, string){
+		"/api/approve": handleApprove,
+		"/api/reject":  handleReject,
+		"/api/edit":    handleEdit,
+	}
+	for path, h := range methods {
+		mux.HandleFunc(path, withMethod("POST", withToken(func(w http.ResponseWriter, r *http.Request, _ string) {
+			srv.lastMu.Lock()
+			srv.lastReq = time.Now()
+			srv.lastMu.Unlock()
+			h(w, r, s, operator)
+		}, srv.token)))
+	}
 
 	ln, err := netListen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -175,6 +170,25 @@ func withToken(next handlerFunc, validToken string) http.HandlerFunc {
 	}
 }
 
+// withMethod rejects requests whose method does not match `want` with
+// 405 Method Not Allowed. Centralising this in a middleware removes
+// the per-handler r.Method checks that previously caused
+// TestRED24/RED25/RED26 to see 405 instead of the expected 500.
+func withMethod(want string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != want {
+			w.Header().Set("Allow", want)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		next(w, r)
+	}
+}
+
+// handler3 is a per-route handler that also receives the store and the
+// operator name. The mutation handlers share this signature.
+type handler3 func(http.ResponseWriter, *http.Request, *store.Store, string)
+
 // netListen is a testable wrapper around net.Listen.
 var netListen = net.Listen
 
@@ -218,10 +232,6 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func handleApprove(w http.ResponseWriter, r *http.Request, s *store.Store, operator string) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	var req apiRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, apiResponse{OK: false, Err: "invalid JSON"})
@@ -239,10 +249,6 @@ func handleApprove(w http.ResponseWriter, r *http.Request, s *store.Store, opera
 }
 
 func handleReject(w http.ResponseWriter, r *http.Request, s *store.Store, operator string) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	var req apiRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, apiResponse{OK: false, Err: "invalid JSON"})
@@ -264,10 +270,6 @@ func handleReject(w http.ResponseWriter, r *http.Request, s *store.Store, operat
 }
 
 func handleEdit(w http.ResponseWriter, r *http.Request, s *store.Store, operator string) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	var req apiRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, apiResponse{OK: false, Err: "invalid JSON"})
