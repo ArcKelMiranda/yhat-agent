@@ -5,10 +5,10 @@
  * Locates the repository root, validates required paths, invokes Archify
  * `deliver` with --quality standard, and writes the output to the fixed path.
  *
- * NOTE: `--quality standard` is used (not showcase) because showcase's
- * corridor-separation rules are incompatible with this compact 2-row layout
- * where multiple source nodes route to the same y-coordinate data layer.
- * Standard quality passes all checks with 0 errors.
+ * NOTE: `--quality showcase` is used: the current v1.2 map passes all 9
+ * artifact checks with 0 errors and 0 warnings under the showcase profile.
+ * The layout is authored to keep the diagram inside the viewer's readable
+ * width, so projected node text stays at or above the 6px minimum.
  *
  * Requires: Node.js >= 18, Git submodule at tools/archify initialized.
  * Does not install packages or access remote resources.
@@ -86,15 +86,16 @@ function main() {
   requireFile(INPUT_JSON, 'Architecture source JSON');
 
   // 4. Run Archify deliver
-  // --quality standard: produces clean layout for this compact diagram
+  // --quality showcase: the v1.2 map is authored for the showcase profile
   // --repo-root: required for architecture type to resolve relative paths
+  //                   and to verify the declared source evidence
   runArchify(
     [
       'deliver',
       'architecture',
       INPUT_JSON,
       OUTPUT_HTML,
-      '--quality', 'standard',
+      '--quality', 'showcase',
       '--repo-root', REPO_ROOT,
     ],
     'deliver'

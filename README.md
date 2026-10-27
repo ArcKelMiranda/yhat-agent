@@ -283,7 +283,9 @@ yhat-agent/
 ## Architecture Documentation
 
 The system architecture is documented as a self-contained rendered diagram and a
-machine-readable source.
+machine-readable source. The current map covers the Cerebro YHat v1.2 runtime:
+MCP capture, the local SQLite store, the human approval bandeja, the share and
+sync path to the central service, and the installer and update flow.
 
 | Artifact | Description |
 |---|---|

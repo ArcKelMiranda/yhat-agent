@@ -2,369 +2,506 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "yhat-agent",
-    "subtitle": "Go CLI managing YHat OpenCode agent and skill assets via embedded resources, manifest tracking, and GitHub Releases direct downloads.",
+    "title": "yhat-agent — Cerebro YHat v1.2",
     "output": "yhat-agent.architecture.html",
-    "quality_profile": "standard"
+    "quality_profile": "showcase",
+    "locale": "en",
+    "repository": {
+      "url": "git@github-agent:ArcKelMiranda/yhat-agent.git",
+      "link_mode": "local-only",
+      "revision": "96dc34955e88e0b613f372eb74e462b77c728c42"
+    },
+    "views": [
+      {
+        "id": "capture-path",
+        "label": "Capture path",
+        "focus": [
+          "clients",
+          "mcp_server",
+          "sensitive",
+          "store"
+        ],
+        "note": "How a chat decision becomes a proposed memory in the local SQLite store."
+      },
+      {
+        "id": "approval-and-sharing",
+        "label": "Approval and sharing",
+        "focus": [
+          "operator",
+          "bandeja",
+          "share",
+          "f3"
+        ],
+        "note": "Human approval in the local bandeja, then the queue and sync path to the central service."
+      }
+    ]
   },
   "components": [
     {
-      "id": "cli",
+      "id": "clients",
       "type": "frontend",
-      "label": "CLI Entry Point",
-      "sublabel": "cmd/yhat-agent/main.go",
+      "label": "AI Clients",
+      "sublabel": "OpenCode · Claude Desktop",
       "pos": [
-        500,
-        60
+        40,
+        40
       ],
       "size": [
-        220,
+        165,
+        64
+      ],
+      "sources": [
+        {
+          "path": "internal/clients/clients.go",
+          "line": 71,
+          "label": "OpenCode registration"
+        },
+        {
+          "path": "internal/clients/clients.go",
+          "line": 297,
+          "label": "Claude Desktop registration"
+        }
+      ]
+    },
+    {
+      "id": "mcp_server",
+      "type": "backend",
+      "label": "MCP Server",
+      "sublabel": "cmd/yhat-agent/mcp.go",
+      "pos": [
+        245,
+        40
+      ],
+      "size": [
+        165,
         70
       ],
-      "tag": "install \u00b7 status \u00b7 update \u00b7 uninstall \u00b7 version"
-    },
-    {
-      "id": "install_cmd",
-      "type": "frontend",
-      "label": "Install",
-      "sublabel": "install.go",
-      "pos": [
-        100,
-        200
-      ],
-      "size": [
-        130,
-        60
-      ],
-      "tag": "WriteExclusiveAtomically"
-    },
-    {
-      "id": "status_cmd",
-      "type": "frontend",
-      "label": "Status",
-      "sublabel": "status.go",
-      "pos": [
-        240,
-        200
-      ],
-      "size": [
-        130,
-        60
+      "tag": "stdio · 6 tools",
+      "sources": [
+        {
+          "path": "cmd/yhat-agent/mcp.go",
+          "line": 612,
+          "label": "stdio transport"
+        },
+        {
+          "path": "cmd/yhat-agent/mcp.go",
+          "line": 654,
+          "label": "propose_memory"
+        },
+        {
+          "path": "cmd/yhat-agent/mcp.go",
+          "line": 737,
+          "label": "share_memory"
+        }
       ]
     },
     {
-      "id": "update_cmd",
-      "type": "frontend",
-      "label": "Update",
-      "sublabel": "update.go",
+      "id": "sensitive",
+      "type": "security",
+      "label": "Sensitive Filter",
+      "sublabel": "internal/sensitive",
       "pos": [
-        380,
-        200
+        450,
+        40
       ],
       "size": [
-        130,
-        60
+        165,
+        64
       ],
-      "tag": "no API token"
+      "tag": "BR13 · 7 patterns",
+      "sources": [
+        {
+          "path": "internal/sensitive/sensitive.go",
+          "line": 73,
+          "label": "compiled patterns"
+        },
+        {
+          "path": "cmd/yhat-agent/mcp.go",
+          "line": 230,
+          "label": "scan on capture"
+        }
+      ]
     },
     {
-      "id": "uninstall_cmd",
-      "type": "frontend",
-      "label": "Uninstall",
-      "sublabel": "uninstall.go",
+      "id": "store",
+      "type": "database",
+      "label": "Local Store",
+      "sublabel": "internal/store · SQLite WAL",
       "pos": [
-        520,
-        200
+        655,
+        40
       ],
       "size": [
-        130,
-        60
+        165,
+        70
       ],
-      "tag": "--yes required"
+      "tag": "3 tables",
+      "sources": [
+        {
+          "path": "internal/store/migrations/001_init.sql",
+          "line": 6,
+          "label": "memories table"
+        },
+        {
+          "path": "internal/store/migrations/001_init.sql",
+          "line": 41,
+          "label": "upload_queue"
+        },
+        {
+          "path": "internal/store/store.go",
+          "line": 172,
+          "label": "WAL pragmas"
+        }
+      ]
     },
     {
-      "id": "version_cmd",
-      "type": "frontend",
-      "label": "Version",
-      "sublabel": "cmd/yhat-agent/main.go \u2014 runVersion()",
-      "pos": [
-        660,
-        200
-      ],
-      "size": [
-        180,
-        60
-      ],
-      "tag": "ldflags"
-    },
-    {
-      "id": "embedded_assets",
+      "id": "share",
       "type": "backend",
-      "label": "Embedded Assets",
-      "sublabel": "embed.go \u2014 embed.FS",
+      "label": "Share and Sync",
+      "sublabel": "internal/share",
       "pos": [
-        100,
-        360
+        860,
+        40
       ],
       "size": [
-        160,
-        64
+        165,
+        70
       ],
-      "tag": "compiled into binary"
+      "tag": "15 min ticker",
+      "sources": [
+        {
+          "path": "internal/share/share.go",
+          "line": 78,
+          "label": "Sync"
+        },
+        {
+          "path": "internal/share/transport.go",
+          "line": 245,
+          "label": "HTTPTransport"
+        },
+        {
+          "path": "internal/share/transport.go",
+          "line": 105,
+          "label": "LocalDirTransport"
+        }
+      ]
     },
     {
-      "id": "manifest",
+      "id": "f3",
+      "type": "cloud",
+      "label": "yhat-central (F3)",
+      "sublabel": "team approval service",
+      "pos": [
+        1065,
+        40
+      ],
+      "size": [
+        165,
+        70
+      ],
+      "tag": "Bearer · 3-of-5 quorum",
+      "sources": [
+        {
+          "path": "docs/central-api.md",
+          "line": 112,
+          "label": "endpoints"
+        },
+        {
+          "path": "docs/central-api.md",
+          "line": 285,
+          "label": "3-of-5 quorum"
+        }
+      ]
+    },
+    {
+      "id": "cli",
+      "type": "frontend",
+      "label": "yhat-agent CLI",
+      "sublabel": "cmd/yhat-agent/main.go",
+      "pos": [
+        40,
+        200
+      ],
+      "size": [
+        165,
+        70
+      ],
+      "tag": "install · status · update · mcp",
+      "sources": [
+        {
+          "path": "cmd/yhat-agent/main.go",
+          "line": 47,
+          "label": "command dispatch"
+        }
+      ]
+    },
+    {
+      "id": "assets_manifest",
       "type": "database",
-      "label": "Manifest",
-      "sublabel": "manifest.go",
+      "label": "Assets and Manifest",
+      "sublabel": "embed.go · manifest.json",
       "pos": [
-        300,
-        360
+        245,
+        200
       ],
       "size": [
-        160,
+        165,
         64
       ],
-      "tag": "~/.config/yhat-agent/"
+      "tag": "SHA-256 tracked",
+      "sources": [
+        {
+          "path": "embed.go",
+          "line": 12,
+          "label": "go:embed assets"
+        },
+        {
+          "path": "manifest.go",
+          "line": 14,
+          "label": "manifest entry"
+        }
+      ]
     },
     {
-      "id": "xdg_config",
-      "type": "database",
-      "label": "OpenCode Config",
-      "sublabel": "paths.go",
+      "id": "operator",
+      "type": "external",
+      "label": "Operator",
+      "sublabel": "Windows WorkSpace",
       "pos": [
-        500,
-        360
+        450,
+        200
       ],
       "size": [
-        160,
+        165,
         64
       ],
-      "tag": "$XDG_CONFIG_HOME/opencode"
+      "sources": [
+        {
+          "path": "internal/bandeja/bandeja.go",
+          "line": 197,
+          "label": "operator identity"
+        }
+      ]
     },
     {
-      "id": "github_releases",
+      "id": "bandeja",
+      "type": "frontend",
+      "label": "Bandeja",
+      "sublabel": "127.0.0.1 · one-shot token",
+      "pos": [
+        655,
+        200
+      ],
+      "size": [
+        165,
+        70
+      ],
+      "tag": "15 min idle",
+      "sources": [
+        {
+          "path": "internal/bandeja/bandeja.go",
+          "line": 94,
+          "label": "loopback bind"
+        },
+        {
+          "path": "internal/bandeja/bandeja.go",
+          "line": 81,
+          "label": "approve route"
+        },
+        {
+          "path": "internal/bandeja/bandeja.go",
+          "line": 137,
+          "label": "idle shutdown"
+        }
+      ]
+    },
+    {
+      "id": "releases",
       "type": "cloud",
       "label": "GitHub Releases",
-      "sublabel": "releases/latest/download/",
+      "sublabel": "releases/latest/download",
       "pos": [
-        700,
-        360
+        40,
+        330
       ],
       "size": [
-        160,
+        165,
         64
       ],
-      "tag": "SHA-256 verified"
-    },
-    {
-      "id": "opencode",
-      "type": "external",
-      "label": "OpenCode Runtime",
-      "sublabel": "opencode config directory",
-      "pos": [
-        500,
-        500
-      ],
-      "size": [
-        160,
-        60
+      "tag": "no API token",
+      "sources": [
+        {
+          "path": "update.go",
+          "line": 96,
+          "label": "download base"
+        },
+        {
+          "path": "update.go",
+          "line": 184,
+          "label": "VerifyChecksum"
+        }
       ]
     },
     {
-      "id": "candidate_file",
+      "id": "candidate",
       "type": "database",
-      "label": "Side-by-side Candidate",
-      "sublabel": "paths.go \u2014 CandidateName()",
+      "label": "Update Candidate",
+      "sublabel": ".yhat-agent-new",
       "pos": [
-        700,
-        450
+        245,
+        330
       ],
       "size": [
-        160,
-        60
+        165,
+        64
       ],
-      "tag": ".yhat-agent-new suffix"
-    }
-  ],
-  "boundaries": [
-    {
-      "kind": "region",
-      "label": "yhat-agent binary",
-      "wraps": [
-        "cli",
-        "install_cmd",
-        "status_cmd",
-        "update_cmd",
-        "uninstall_cmd",
-        "version_cmd",
-        "embedded_assets",
-        "manifest"
-      ]
-    },
-    {
-      "kind": "region",
-      "label": "External",
-      "wraps": [
-        "github_releases",
-        "xdg_config",
-        "opencode",
-        "candidate_file"
+      "tag": "manual rename",
+      "sources": [
+        {
+          "path": "update.go",
+          "line": 292,
+          "label": "candidate path"
+        },
+        {
+          "path": "paths.go",
+          "line": 141,
+          "label": "exclusive write"
+        }
       ]
     }
   ],
   "connections": [
     {
-      "id": "c1",
+      "id": "clients-to-mcp",
+      "from": "clients",
+      "to": "mcp_server",
+      "label": "stdio MCP session",
+      "labelDy": 72
+    },
+    {
+      "id": "mcp-to-filter",
+      "from": "mcp_server",
+      "to": "sensitive",
+      "label": "scan title and content",
+      "labelDy": 72
+    },
+    {
+      "id": "filter-to-store",
+      "from": "sensitive",
+      "to": "store",
+      "label": "insert status=proposed",
+      "labelDy": 72
+    },
+    {
+      "id": "store-to-bandeja",
+      "from": "store",
+      "to": "bandeja",
+      "label": "pending memories",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 70
+    },
+    {
+      "id": "bandeja-to-share",
+      "from": "bandeja",
+      "to": "share",
+      "label": "approved becomes validated",
+      "labelAt": [
+        1000,
+        286
+      ]
+    },
+    {
+      "id": "share-to-f3",
+      "from": "share",
+      "to": "f3",
+      "label": "Bearer · 15s timeout",
+      "labelDy": 72
+    },
+    {
+      "id": "operator-to-bandeja",
+      "from": "operator",
+      "to": "bandeja",
+      "label": "approve / reject / edit",
+      "labelDy": 70
+    },
+    {
+      "id": "cli-to-clients",
       "from": "cli",
-      "to": "install_cmd",
-      "label": "install",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "labelDy": -8
+      "to": "clients",
+      "label": "register MCP server",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelAt": [
+        145,
+        140
+      ]
     },
     {
-      "id": "c2",
+      "id": "cli-to-assets",
       "from": "cli",
-      "to": "status_cmd",
-      "label": "status",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "labelDy": -8
+      "to": "assets_manifest",
+      "label": "install and record hashes",
+      "labelDy": 70
     },
     {
-      "id": "c3",
+      "id": "cli-to-releases",
       "from": "cli",
-      "to": "update_cmd",
-      "label": "update",
+      "to": "releases",
+      "label": "update check",
+      "variant": "dashed",
       "fromSide": "bottom",
       "toSide": "top",
-      "labelDy": -8
+      "labelAt": [
+        145,
+        288
+      ]
     },
     {
-      "id": "c4",
-      "from": "cli",
-      "to": "uninstall_cmd",
-      "label": "uninstall",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "labelDy": -8
-    },
-    {
-      "id": "c5",
-      "from": "cli",
-      "to": "version_cmd",
-      "label": "version",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "labelDy": -8
-    },
-    {
-      "id": "c6",
-      "from": "install_cmd",
-      "to": "embedded_assets",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "labelDy": -8,
-      "variant": "dashed"
-    },
-    {
-      "id": "c7",
-      "from": "install_cmd",
-      "to": "manifest",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "labelDy": -8,
-      "labelDx": 8
-    },
-    {
-      "id": "c8",
-      "from": "install_cmd",
-      "to": "xdg_config",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "labelDy": -8,
-      "labelDx": 16
-    },
-    {
-      "id": "c9",
-      "from": "status_cmd",
-      "to": "manifest",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "labelDy": -8,
-      "labelDx": -8
-    },
-    {
-      "id": "c10",
-      "from": "status_cmd",
-      "to": "xdg_config",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "labelDy": -8
-    },
-    {
-      "id": "c11",
-      "from": "update_cmd",
-      "to": "github_releases",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "labelDy": -8,
-      "labelDx": 8
-    },
-    {
-      "id": "c12",
-      "from": "uninstall_cmd",
-      "to": "manifest",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "labelDy": -8,
-      "labelDx": -16
-    },
-    {
-      "id": "c13",
-      "from": "uninstall_cmd",
-      "to": "xdg_config",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "labelDy": -8,
-      "labelDx": -8
-    },
-    {
-      "id": "c14",
-      "from": "xdg_config",
-      "to": "opencode",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "labelDy": -8
+      "id": "releases-to-candidate",
+      "from": "releases",
+      "to": "candidate",
+      "label": "SHA-256 verified",
+      "labelDy": 52
     }
   ],
   "cards": [
     {
       "dot": "cyan",
-      "title": "Install",
+      "title": "Capture",
       "items": [
-        "Reads embedded assets from Go embed.FS",
-        "Writes files exclusively using WriteExclusiveAtomically (O_CREATE|O_EXCL, single syscall, no TOCTOU window)",
-        "Records SHA-256 hashes in manifest"
+        "MCP tools: fts5_search, propose_memory, list_pending, get_memory, search_brain, share_memory",
+        "propose_memory always writes status=proposed and takes the author from the operator config",
+        "BR13 filter scans title, content and context, and masks the rejected secret"
       ]
     },
     {
       "dot": "emerald",
-      "title": "Drift handling",
+      "title": "Approval",
       "items": [
-        "Status compares installed file hash against manifest content_hash",
-        "Uninstall refuses to remove files flagged as modified"
+        "Bandeja binds 127.0.0.1 on a random port and guards every route with a one-shot token",
+        "Approve validates, reject stores a reason, edit rewrites the record before re-validation",
+        "Server shuts down after 15 idle minutes; the Enviados section shows rejections and their reason"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Sharing",
+      "items": [
+        "share_memory requires a validated memory with share_status=none and enqueues into upload_queue",
+        "Sync is FIFO by ordered_at, keeps a pull_cursor in sync_state and retries failures with backoff",
+        "LocalDirTransport writes a central repo folder; HTTPTransport talks to F3 with a bearer token"
       ]
     },
     {
       "dot": "rose",
-      "title": "Update",
+      "title": "Central and distribution",
       "items": [
-        "Downloads from GitHub releases/latest/download/ (no API token)",
-        "Verifies SHA-256 checksum before writing local side-by-side <name>.yhat-agent-new",
-        "User applies the candidate manually by renaming it over the running binary",
-        "Status command detects candidates by .yhat-agent-new suffix in standard dirs"
+        "F3 is a separate repository: 3-of-5 operator quorum, team roster, rejection reason at vote time",
+        "Install copies the embedded OpenCode agent and skill, tracked by a SHA-256 manifest",
+        "Update downloads from GitHub Releases, verifies the checksum, then writes a .yhat-agent-new candidate the operator renames by hand",
+        "The WiX 3.14 per-user MSI runs yhat-agent install --no-bandeja and uninstall --yes"
       ]
     }
   ]
