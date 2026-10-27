@@ -633,6 +633,58 @@ func TestRED16_EditUpdatesFields(t *testing.T) {
 	}
 }
 
+func editWithContext(t *testing.T, body map[string]interface{}) store.Memory {
+	t.Helper()
+	s, _, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	srv, err := bandeja.Start(ctx, s)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer srv.Close()
+
+	orig := "contexto original"
+	mem, err := s.ProposeMemory(ctx, store.Memory{
+		Type: store.MemoryTypeDecision, Title: "Titulo", Content: "Contenido.", Context: &orig, Author: "a",
+	})
+	if err != nil {
+		t.Fatalf("ProposeMemory: %v", err)
+	}
+	body["id"] = mem.ID
+	body["title"] = "Titulo editado"
+	body["content"] = "Contenido editado."
+	resp := doReq(t, baseURL(t, srv.URL()), extractToken(t, srv.URL()), "/api/edit", body)
+	defer resp.Body.Close()
+	if r := readJSON(t, resp); !r.OK {
+		t.Fatalf("edit failed: %+v", r)
+	}
+	got, err := s.GetMemory(ctx, mem.ID)
+	if err != nil {
+		t.Fatalf("GetMemory: %v", err)
+	}
+	return got
+}
+
+// The page's doEdit sends only id/title/content; the stored context must survive.
+func TestEdit_KeepsContextWhenRequestOmitsIt(t *testing.T) {
+	got := editWithContext(t, map[string]interface{}{})
+	if got.Context == nil || *got.Context != "contexto original" {
+		t.Errorf("context after edit without context key: got %v, want kept", got.Context)
+	}
+	if got.Title != "Titulo editado" {
+		t.Errorf("title not edited: %q", got.Title)
+	}
+}
+
+// An explicit empty context still clears it (previous behaviour).
+func TestEdit_ExplicitEmptyContextClearsIt(t *testing.T) {
+	got := editWithContext(t, map[string]interface{}{"context": ""})
+	if got.Context != nil {
+		t.Errorf("context after explicit empty: got %q, want cleared", *got.Context)
+	}
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // RED 17: Token is reusable for multiple page loads.
 // ─────────────────────────────────────────────────────────────────────────────

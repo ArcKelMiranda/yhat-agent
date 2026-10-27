@@ -247,11 +247,11 @@ func resolveOperator() string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 type apiRequest struct {
-	ID      string `json:"id"`
-	Title   string `json:"title"`
-	Content string `json:"content"`
-	Reason  string `json:"reason"`
-	Context string `json:"context,omitempty"`
+	ID      string  `json:"id"`
+	Title   string  `json:"title"`
+	Content string  `json:"content"`
+	Reason  string  `json:"reason"`
+	Context *string `json:"context,omitempty"` // nil = field absent
 }
 
 type apiResponse struct {
@@ -322,9 +322,18 @@ func handleEdit(w http.ResponseWriter, r *http.Request, s *store.Store, operator
 		writeJSON(w, http.StatusBadRequest, apiResponse{OK: false, Err: "missing content"})
 		return
 	}
-	var ctxPtr *string
-	if req.Context != "" {
-		ctxPtr = &req.Context
+	// An absent context keeps the stored one (the page's edit form does not
+	// send it); an explicit empty string clears it.
+	ctxPtr := req.Context
+	if ctxPtr == nil {
+		current, err := s.GetMemory(r.Context(), req.ID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, apiResponse{OK: false, Err: err.Error()})
+			return
+		}
+		ctxPtr = current.Context
+	} else if *ctxPtr == "" {
+		ctxPtr = nil
 	}
 	if err := s.Edit(r.Context(), req.ID, req.Title, req.Content, ctxPtr); err != nil {
 		writeJSON(w, http.StatusInternalServerError, apiResponse{OK: false, Err: err.Error()})
