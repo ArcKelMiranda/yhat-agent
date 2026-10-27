@@ -19,6 +19,7 @@ yhat-agent install   # Install embedded agent and skill assets
 yhat-agent status   # Report installation state without making changes
 yhat-agent update   # Download and verify latest release from GitHub
 yhat-agent version  # Show version and build information
+yhat-agent export-md   # Write every local memory as Markdown to ~/.yhat/memories
 yhat-agent bandeja [--idle 10m]   # Open the approval inbox; closes after --idle without requests (default 10m)
 yhat-agent uninstall --yes   # Remove managed files (requires confirmation)
 ```
@@ -35,6 +36,14 @@ exists (or `CLAUDE_CONFIG_DIR` points to an existing directory), or when you pas
 
 `status` reports the skill state. `uninstall --yes` removes the skill (only if unmodified) and runs
 `claude mcp remove --scope user yhat`.
+
+### Markdown copy of the memories
+
+Every memory is also written as `~/.yhat/memories/<id>.md` (YAML frontmatter + title, content and
+context) each time it is proposed, validated, rejected, edited, archived or shared. SQLite
+(`~/.yhat/yhat.db`) stays the source of truth: the `.md` files are a readable, git-friendly copy.
+A failed `.md` write is logged and never fails the operation. Run `yhat-agent export-md` to
+(re)write all of them, for example for memories created before this feature.
 
 ### Update behavior
 

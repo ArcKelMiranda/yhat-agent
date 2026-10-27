@@ -161,7 +161,8 @@ type SyncState struct {
 
 // Store wraps a *sql.DB with typed methods for the Cerebro tables.
 type Store struct {
-	db *sql.DB
+	db    *sql.DB
+	mdDir string // Markdown mirror directory; "" disables it
 }
 
 // Open opens (or creates) the SQLite database at path.
@@ -184,7 +185,7 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("Ping: %w", err)
 	}
 
-	s := &Store{db: db}
+	s := &Store{db: db, mdDir: markdownDirFor(path)}
 
 	if err := s.runMigrations(); err != nil {
 		db.Close()
@@ -342,7 +343,11 @@ func (s *Store) ProposeMemory(ctx context.Context, mem Memory) (Memory, error) {
 		return Memory{}, fmt.Errorf("INSERT memories: %w", err)
 	}
 
-	return s.getMemoryByID(ctx, id)
+	created, err := s.getMemoryByID(ctx, id)
+	if err == nil {
+		s.mirror(created)
+	}
+	return created, err
 }
 
 // ------------------------------------------------------------------------------------------------------------------------------------------
@@ -374,6 +379,7 @@ func (s *Store) Validate(ctx context.Context, id, validatedBy string) error {
 	if rows == 0 {
 		return ErrNotFound
 	}
+	s.mirrorID(ctx, id)
 	return nil
 }
 
@@ -405,6 +411,7 @@ func (s *Store) Reject(ctx context.Context, id, rejectedBy, reason string) error
 	if rows == 0 {
 		return ErrNotFound
 	}
+	s.mirrorID(ctx, id)
 	return nil
 }
 
@@ -463,6 +470,7 @@ func (s *Store) Edit(ctx context.Context, id, title, content string, context_ *s
 	if rows == 0 {
 		return ErrNotFound
 	}
+	s.mirrorID(ctx, id)
 	return nil
 }
 
@@ -492,6 +500,7 @@ func (s *Store) Archive(ctx context.Context, id string) error {
 	if rows == 0 {
 		return ErrNotFound
 	}
+	s.mirrorID(ctx, id)
 	return nil
 }
 
@@ -529,6 +538,7 @@ func (s *Store) SetShareStatus(ctx context.Context, id, shareStatus string) erro
 	if rows == 0 {
 		return ErrNotFound
 	}
+	s.mirrorID(ctx, id)
 	return nil
 }
 
@@ -641,6 +651,7 @@ func (s *Store) InsertTeamMemory(ctx context.Context, mem Memory) (string, error
 	if err != nil {
 		return "", fmt.Errorf("InsertTeamMemory: %w", err)
 	}
+	s.mirrorID(ctx, id)
 	return id, nil
 }
 

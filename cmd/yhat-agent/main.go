@@ -63,6 +63,8 @@ func main() {
 	case "sync":
 		exitCode := runSyncCommand(args)
 		os.Exit(exitCode)
+	case "export-md":
+		os.Exit(runExportMD())
 	case "version", "--version", "-v":
 		runVersion()
 	case "help", "--help", "-h":
@@ -88,6 +90,7 @@ Commands:
   bandeja    Open the local approval inbox in your browser
   mcp        Run MCP stdio server (experimental F0 prototype)
   sync       Drain upload queue and sync with central repository
+  export-md  Write every local memory as Markdown to ~/.yhat/memories
   version    Show version and build information
   help       Show this help message
 

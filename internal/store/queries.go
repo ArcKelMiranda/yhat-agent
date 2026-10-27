@@ -192,6 +192,7 @@ func (s *Store) MarkUploadSent(ctx context.Context, memoryID string) error {
 	if err != nil {
 		return fmt.Errorf("MarkUploadSent DELETE queue: %w", err)
 	}
+	s.mirrorID(ctx, memoryID)
 	return nil
 }
 
