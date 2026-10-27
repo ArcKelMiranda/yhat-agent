@@ -19,6 +19,7 @@ yhat-agent install   # Install embedded agent and skill assets
 yhat-agent status   # Report installation state without making changes
 yhat-agent update   # Download and verify latest release from GitHub
 yhat-agent version  # Show version and build information
+yhat-agent bandeja [--idle 10m]   # Open the approval inbox; closes after --idle without requests (default 10m)
 yhat-agent uninstall --yes   # Remove managed files (requires confirmation)
 ```
 

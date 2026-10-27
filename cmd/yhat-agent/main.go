@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	yhatagent "github.com/ArcKelMiranda/yhat-agent"
@@ -94,6 +96,7 @@ Options:
   --json           Output status in JSON format
   --dry-run        Show what would be done without making changes (uninstall only)
   --claude-code    Force Claude Code setup (skill + MCP) on install; otherwise done when ~/.claude exists
+  --idle           Close the bandeja after this long without requests (default 10m, e.g. --idle 30m)
   --no-bandeja     Skip opening bandeja after install (install command only)
   --central-token  Override the central bearer token from config.yaml
 ` + mcpUsageNote)
@@ -621,9 +624,14 @@ func runInstallF1() error {
 
 // runBandeja is the entry point for the bandeja subcommand.
 // It opens the HTTP server and the browser, blocking until the user
-// presses Ctrl+C or 15 minutes of idle time elapse.
+// presses Ctrl+C or the idle limit (--idle, default 10m) elapses.
 func runBandeja() {
-	ctx, cancel := context.WithCancel(context.Background())
+	idle, err := idleFlag()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "bandeja: %v\n", err)
+		os.Exit(2)
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	s, err := store.Open(config.DBPath())
@@ -633,7 +641,7 @@ func runBandeja() {
 	}
 	defer s.Close()
 
-	srv, err := bandeja.Start(ctx, s)
+	srv, err := bandeja.StartWithIdle(ctx, s, idle)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "bandeja: start server: %v\n", err)
 		os.Exit(1)
@@ -659,7 +667,11 @@ func runBandeja() {
 // It starts the server, prints the URL, tries to open the browser,
 // and blocks until Ctrl+C.
 func runBandejaPrompt() error {
-	ctx, cancel := context.WithCancel(context.Background())
+	idle, err := idleFlag()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	s, err := store.Open(config.DBPath())
@@ -668,7 +680,7 @@ func runBandejaPrompt() error {
 	}
 	defer s.Close()
 
-	srv, err := bandeja.Start(ctx, s)
+	srv, err := bandeja.StartWithIdle(ctx, s, idle)
 	if err != nil {
 		return fmt.Errorf("start server: %w", err)
 	}
@@ -676,15 +688,38 @@ func runBandejaPrompt() error {
 
 	fmt.Printf("Abre en tu navegador: %s\n", srv.URL())
 	fmt.Println("Presiona Ctrl+C para cerrar la Bandeja.")
+	bandeja.OpenBrowser(srv.URL())
 
-	// Wait in a goroutine so runInstall can return; the process lives
-	// in the terminal. After 15 min idle, idleShutdown closes srv.
-	done := make(chan error, 1)
-	go func() {
-		done <- srv.Wait()
-	}()
-
-	// Give the browser a moment to launch.
-	time.Sleep(500 * time.Millisecond)
+	// Block until Ctrl+C, the idle limit, or a serve failure; returning
+	// earlier would close the server as soon as install finishes.
+	if err := srv.Wait(); err != nil {
+		return fmt.Errorf("server stopped: %w", err)
+	}
 	return nil
+}
+
+// idleFlag parses --idle <duration> / --idle=<duration> from the subcommand
+// args. It defaults to bandeja.DefaultIdle and rejects non-positive values.
+func idleFlag() (time.Duration, error) {
+	args := os.Args[2:]
+	for i, a := range args {
+		var raw string
+		switch {
+		case a == "--idle":
+			if i+1 >= len(args) {
+				return 0, fmt.Errorf("--idle requires a duration (for example 10m)")
+			}
+			raw = args[i+1]
+		case strings.HasPrefix(a, "--idle="):
+			raw = strings.TrimPrefix(a, "--idle=")
+		default:
+			continue
+		}
+		d, err := time.ParseDuration(raw)
+		if err != nil || d <= 0 {
+			return 0, fmt.Errorf("invalid --idle %q: use a positive duration such as 10m", raw)
+		}
+		return d, nil
+	}
+	return bandeja.DefaultIdle, nil
 }

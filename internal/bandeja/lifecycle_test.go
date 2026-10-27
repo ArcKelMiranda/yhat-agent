@@ -112,3 +112,25 @@ func TestLifecycle_ServeErrorIsReturnedByWait(t *testing.T) {
 		t.Fatal("Wait did not return after serve error")
 	}
 }
+
+func TestLifecycle_StartWithIdleUsesGivenLimit(t *testing.T) {
+	defer bandeja.SetIdleForTest(10*time.Millisecond, time.Hour)()
+	s, _, cleanup := newTestStore(t)
+	defer cleanup()
+	srv, err := bandeja.StartWithIdle(context.Background(), s, 50*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	select {
+	case <-waitReturns(t, srv):
+	case <-time.After(2 * time.Second):
+		t.Fatal("explicit idle limit was ignored")
+	}
+}
+
+func TestLifecycle_DefaultIdleIsTenMinutes(t *testing.T) {
+	if bandeja.DefaultIdle != 10*time.Minute {
+		t.Fatalf("DefaultIdle = %v, want 10m", bandeja.DefaultIdle)
+	}
+}

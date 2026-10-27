@@ -18,7 +18,7 @@
 // Idle shutdown
 //
 // A background goroutine ticks every 30 seconds and calls s.Close() if
-// time.Since(lastRequest) > 15 minutes. The timer resets on every request.
+// time.Since(lastRequest) > the idle limit (DefaultIdle, 10 minutes). The timer resets on every request.
 // The server also shuts down when the context passed to Start is cancelled.
 
 package bandeja
@@ -57,9 +57,14 @@ type Server struct {
 
 // Start creates a Bandeja server that listens on 127.0.0.1:0, mints a
 // one-shot token, and returns the bootstrap URL. The store is used for
-// all data access. The server shuts down after 15 minutes of idle or when
-// ctx is cancelled.
+// all data access. The server shuts down after DefaultIdle without requests or
+// when ctx is cancelled.
 func Start(ctx context.Context, s *store.Store) (*Server, error) {
+	return StartWithIdle(ctx, s, idleLimit)
+}
+
+// StartWithIdle is Start with an explicit idle limit.
+func StartWithIdle(ctx context.Context, s *store.Store, idle time.Duration) (*Server, error) {
 	mux := http.NewServeMux()
 	srv := &Server{
 		token:   mintToken(),
@@ -115,7 +120,11 @@ func Start(ctx context.Context, s *store.Store) (*Server, error) {
 		srv.stop(nil)
 	}()
 
-	go srv.idleShutdown(ctx, idleTick, idleLimit)
+	tick := idleTick
+	if idle/2 < tick {
+		tick = idle / 2 // keep --idle accurate for short limits
+	}
+	go srv.idleShutdown(ctx, tick, idle)
 
 	return srv, nil
 }
@@ -150,7 +159,7 @@ func (s *Server) Wait() error {
 }
 
 // idleShutdown ticks every 30s and closes the server if no request arrived
-// in the last 15 minutes. It also exits when ctx is cancelled.
+// in the last limit. It also exits when ctx is cancelled.
 func (s *Server) idleShutdown(ctx context.Context, tick, limit time.Duration) {
 	ticker := time.NewTicker(tick)
 	defer ticker.Stop()
@@ -209,8 +218,11 @@ type handler3 func(http.ResponseWriter, *http.Request, *store.Store, string)
 // Idle-shutdown timing; variables so tests can shorten them.
 var (
 	idleTick  = 30 * time.Second
-	idleLimit = 15 * time.Minute
+	idleLimit = DefaultIdle
 )
+
+// DefaultIdle is how long the server may go without a request before it stops.
+const DefaultIdle = 10 * time.Minute
 
 // netListen is a testable wrapper around net.Listen.
 var netListen = net.Listen
