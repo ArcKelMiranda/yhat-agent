@@ -27,7 +27,7 @@ jobs:
           # Fail closed on any validation error.
 
           # Length check: min v1.0.0 = 5 chars, max 50 chars
-          case ${#TAG} in
+          case "${#TAG}" in
             [5-9]|1[0-9]|2[0-9]|3[0-9]|4[0-9]|50) ;;
             *)
               echo "ERROR: Tag length out of range (got ${#TAG}, expected 5-50)" >&2
@@ -37,13 +37,13 @@ jobs:
 
           # Anchored Bash-native regex: ^v<num>.<num>.<num>$
           # TAG is supplied only through env — no untrusted expression interpolation.
-          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "ERROR: Tag '$TAG' is not a valid semver tag (expected vMAJOR.MINOR.PATCH with numeric components)" >&2
+          if ! [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERROR: Tag '${TAG}' is not a valid semver tag (expected vMAJOR.MINOR.PATCH with numeric components)" >&2
             exit 1
           fi
 
           # Tag is valid — output for downstream jobs
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
 
   build:
     needs: validate-tag
@@ -76,6 +76,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-tag.outputs.tag }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -106,13 +108,12 @@ jobs:
           # Checksum format: lowercase <64-hex>  <two spaces> <filename> LF
           # OpenSSL is available on all three OS runners.
           checksum_hex=$(openssl dgst -sha256 -binary "${output}" | xxd -p | tr -d '\n')
-          printf '%s  %s\n' "$checksum_hex" "${output}" > "${checksum_file}"
+          printf '%s  %s\n' "${checksum_hex}" "${output}" > "${checksum_file}"
 
           echo "Checksum computed:"
           cat "${checksum_file}"
 
       - name: Upload artifacts
-        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           # One artifact per platform; both the binary and its checksum are together.
@@ -125,7 +126,6 @@ jobs:
   verify:
     needs: [validate-tag]
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - name: Checkout at tag
         uses: actions/checkout@v4
@@ -150,18 +150,18 @@ jobs:
           mkdir -p artifacts
           errors=0
           for entry in "${platforms[@]}"; do
-            IFS=':' read -r goos goarch ext <<< "$entry"
+            IFS=: read -r goos goarch ext <<< "${entry}"
             output="yhat-agent_${goos}_${goarch}${ext}"
             echo "Building and verifying $output..."
-            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
-              go build -ldflags="-s -w" -o "artifacts/$output" ./cmd/yhat-agent
+            CGO_ENABLED=0 GOOS="${goos}" GOARCH="${goarch}" \
+              go build -ldflags="-s -w" -o "artifacts/${output}" ./cmd/yhat-agent
 
-            checksum_hex=$(openssl dgst -sha256 -binary "artifacts/$output" | xxd -p | tr -d '\n')
-            printf '%s  %s\n' "$checksum_hex" "$output" > "artifacts/$output.sha256sum"
+            checksum_hex=$(openssl dgst -sha256 -binary "artifacts/${output}" | xxd -p | tr -d '\n')
+            printf '%s  %s\n' "${checksum_hex}" "${output}" > "artifacts/${output}.sha256sum"
 
             # Self-verify: recompute and compare
-            verify_hex=$(openssl dgst -sha256 -binary "artifacts/$output" | xxd -p | tr -d '\n')
-            if [ "$checksum_hex" = "$verify_hex" ]; then
+            verify_hex=$(openssl dgst -sha256 -binary "artifacts/${output}" | xxd -p | tr -d '\n')
+            if [ "${checksum_hex}" = "${verify_hex}" ]; then
               echo "  ✓ $output checksum OK"
             else
               echo "  ✗ $output checksum MISMATCH"
@@ -179,8 +179,7 @@ jobs:
 
   # ── MSI build ──────────────────────────────────────────────────────────────
   # Runs on Windows because WiX is a Windows-native tool.
-  # Depends on validate-tag so it uses the same approved tag.
-  # The MSI is built alongside the Go binary — both are needed at the same time.
+  # All three jobs (build, verify, build-msi) compile the same tag.
   build-msi:
     needs: [validate-tag, build]
     runs-on: windows-latest
@@ -221,40 +220,53 @@ jobs:
           # MSI ProductVersion requires exactly 4 dot-separated octets.
           # All v3.x releases share the same UpgradeCode, so the patch
           # goes in the 3rd octet and the 4th is always 0.
-          MSI_VERSION="${RELEASE_TAG#v}"
-          MSI_VERSION="${MSI_VERSION}.0"
+          # cut strips the leading "v" to avoid shell parameter-expansion
+          # operators (# :) that trigger shellcheck SC2086 in GA context.
+          TAG_NO_V=$(printf '%s' "${RELEASE_TAG}" | cut -c2-)
+          MSI_VERSION="${TAG_NO_V}.0"
           echo "msi-version=$MSI_VERSION" >> $GITHUB_OUTPUT
           echo "MSI version: $MSI_VERSION"
 
-      - name: Download WiX 3.14
+      - name: Set up WiX 3.14
         id: wix
         shell: bash
+        env:
+          WIX_VERSION: "3.14.1.8722"
         run: |
-          # Check if WiX is already in PATH
-          if where.exe candle.exe >nul 2>&1; then
-            echo "WiX found in PATH"
+          # windows-latest images may have WiX 3 already; use it if present.
+          # Otherwise download it explicitly so this step's outputs are
+          # available to subsequent steps (not just $GITHUB_PATH for later steps).
+          WIX_DIR="C:/wix"
+          if [ -f "${WIX_DIR}/candle.exe" ]; then
+            echo "WiX found at ${WIX_DIR}"
           else
-            WIX_DIR="$HOME/.wix"
-            if [ -d "$WIX_DIR" ] && [ -f "$WIX_DIR/candle.exe" ]; then
-              echo "WiX found in $WIX_DIR"
-            else
-              echo "Downloading WiX 3.14..."
-              curl -fsSL --retry 3 --retry-delay 5 \
-                -o "$env:TEMP/wix.zip" \
-                "https://github.com/wixtoolset/wix3/releases/download/wix3142rtm/wix314-binaries.zip"
-              mkdir -p "$WIX_DIR"
-              unzip -o "$env:TEMP/wix.zip" -d "$WIX_DIR"
-              echo "WiX extracted to $WIX_DIR"
-              echo "$WIX_DIR" >> $GITHUB_PATH
-            fi
+            echo "Downloading WiX ${WIX_VERSION}..."
+            curl -fsSL --retry 3 --retry-delay 5 \
+              -o /tmp/wix.zip \
+              "https://github.com/wixtoolset/wix3/releases/download/wix3142rtm/wix314-binaries.zip"
+            mkdir -p "${WIX_DIR}"
+            unzip -o /tmp/wix.zip -d "${WIX_DIR}"
+            rm -f /tmp/wix.zip
+            echo "WiX extracted to ${WIX_DIR}"
           fi
-          candle.exe -? | head -1
+          echo "candle.exe found: $(ls "${WIX_DIR}"/candle.exe)"
+          echo "light.exe found: $(ls "${WIX_DIR}"/light.exe)"
+          # Verify both binaries exist before declaring success
+          if [ ! -f "${WIX_DIR}/candle.exe" ] || [ ! -f "${WIX_DIR}/light.exe" ]; then
+            echo "ERROR: WiX binaries not found"
+            exit 1
+          fi
 
       - name: Build MSI
         shell: bash
         env:
           MSI_VERSION: ${{ steps.msi-version.outputs.msi-version }}
+          WIX_DIR: C:/wix
         run: |
+          # WiX binaries are in WIX_DIR from the previous step.
+          CANDLE="${WIX_DIR}/candle.exe"
+          LIGHT="${WIX_DIR}/light.exe"
+
           # YHAT_SOURCE_DIR must be a Windows absolute path for WiX.
           SRC_ABS="$(pwd)/dist/yhat-agent_windows_amd64.exe"
           SRC_ABS="${SRC_ABS//\//\\}"   # forward slash → backslash
@@ -262,22 +274,26 @@ jobs:
           echo "MSI version: $MSI_VERSION"
 
           echo "Step 1/2 — candle.exe"
-          candle.exe \
-            -d"YHAT_VERSION=$MSI_VERSION" \
-            -d"YHAT_SOURCE_DIR=$SRC_ABS" \
+          if ! "${CANDLE}" \
+            -d"YHAT_VERSION=${MSI_VERSION}" \
+            -d"YHAT_SOURCE_DIR=${SRC_ABS}" \
             -out "dist/yhat-agent.wixobj" \
-            "installer/yhat-agent.wxs"
-          if [ $? -ne 0 ]; then echo "ERROR: candle.exe failed"; exit 1; fi
+            "installer/yhat-agent.wxs"; then
+            echo "ERROR: candle.exe failed"
+            exit 1
+          fi
 
           echo "Step 2/2 — light.exe"
           # WixUtilExtension provides WixCA (WixQuietExec entry point).
           # Both extensions ship in the WiX bin folder alongside candle.exe.
-          light.exe \
+          if ! "${LIGHT}" \
             -ext WixUIExtension \
             -ext WixUtilExtension \
             -out "dist/yhat-agent-${MSI_VERSION}-amd64.msi" \
-            "dist/yhat-agent.wixobj"
-          if [ $? -ne 0 ]; then echo "ERROR: light.exe failed"; exit 1; fi
+            "dist/yhat-agent.wixobj"; then
+            echo "ERROR: light.exe failed"
+            exit 1
+          fi
 
           echo ""
           echo "MSI built:"
@@ -318,8 +334,8 @@ jobs:
         id: msi-version
         shell: bash
         run: |
-          MSI_VERSION="${RELEASE_TAG#v}"
-          MSI_VERSION="${MSI_VERSION}.0"
+          TAG_NO_V=$(printf '%s' "${RELEASE_TAG}" | cut -c2-)
+          MSI_VERSION="${TAG_NO_V}.0"
           echo "msi-version=$MSI_VERSION" >> $GITHUB_OUTPUT
 
       - name: List all artifacts
@@ -331,26 +347,25 @@ jobs:
         shell: bash
         run: |
           MSI_FILE="artifacts/yhat-agent-${{ steps.msi-version.outputs.msi-version }}-amd64.msi"
-          if [ -f "$MSI_FILE" ]; then
-            checksum_hex=$(openssl dgst -sha256 -binary "$MSI_FILE" | xxd -p | tr -d '\n')
-            printf '%s  %s\n' "$checksum_hex" "$(basename $MSI_FILE)" >> artifacts/SHA256SUMS
+          if [ -f "${MSI_FILE}" ]; then
+            checksum_hex=$(openssl dgst -sha256 -binary "${MSI_FILE}" | xxd -p | tr -d '\n')
+            printf '%s  %s\n' "${checksum_hex}" "$(basename "${MSI_FILE}")" >> artifacts/SHA256SUMS
             echo "MSI checksum added to SHA256SUMS"
           else
-            echo "WARNING: MSI file not found at $MSI_FILE"
+            echo "WARNING: MSI file not found at ${MSI_FILE}"
             ls -la artifacts/*.msi 2>/dev/null || true
           fi
 
       - name: Append Go binary checksums to SHA256SUMS
         run: |
           for f in artifacts/*.sha256sum; do
-            [ -f "$f" ] && cat "$f" >> artifacts/SHA256SUMS
+            [ -f "${f}" ] && cat "${f}" >> artifacts/SHA256SUMS
           done
           echo "SHA256SUMS contents:"
           cat artifacts/SHA256SUMS
 
       - name: Upload to GitHub Release (draft)
-        continue-on-error: true
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           draft: true
