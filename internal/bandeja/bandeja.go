@@ -50,6 +50,9 @@ type Server struct {
 	lastReq    time.Time
 	closeOnce  sync.Once
 	closeErr   error
+	done       chan struct{} // closed when the server stops serving
+	doneOnce   sync.Once
+	serveErr   error // set before done is closed
 }
 
 // Start creates a Bandeja server that listens on 127.0.0.1:0, mints a
@@ -59,7 +62,9 @@ type Server struct {
 func Start(ctx context.Context, s *store.Store) (*Server, error) {
 	mux := http.NewServeMux()
 	srv := &Server{
-		token: mintToken(),
+		token:   mintToken(),
+		done:    make(chan struct{}),
+		lastReq: time.Now(), // not the zero time, or idleShutdown fires at the first tick
 	}
 
 	operator := resolveOperator()
@@ -104,10 +109,13 @@ func Start(ctx context.Context, s *store.Store) (*Server, error) {
 	go func() {
 		if err := srv.httpServer.Serve(ln); err != nil && err != http.ErrServerClosed {
 			log.Printf("bandeja serve error: %v", err)
+			srv.stop(err)
+			return
 		}
+		srv.stop(nil)
 	}()
 
-	go srv.idleShutdown(ctx)
+	go srv.idleShutdown(ctx, idleTick, idleLimit)
 
 	return srv, nil
 }
@@ -122,20 +130,29 @@ func (s *Server) Close() error {
 	s.closeOnce.Do(func() {
 		s.closeErr = s.httpServer.Close()
 	})
+	s.stop(nil)
 	return s.closeErr
 }
 
-// Wait blocks until ctx is cancelled or 15 minutes of idle time elapses.
-// The ctx passed to Start controls this.
+// stop records the first stop reason and releases Wait.
+func (s *Server) stop(err error) {
+	s.doneOnce.Do(func() {
+		s.serveErr = err
+		close(s.done)
+	})
+}
+
+// Wait blocks until the server stops: ctx cancelled, idle timeout, Close, or
+// a serve failure. It returns the serve error, or nil for a clean stop.
 func (s *Server) Wait() error {
-	<-context.Background().Done()
-	return nil
+	<-s.done
+	return s.serveErr
 }
 
 // idleShutdown ticks every 30s and closes the server if no request arrived
 // in the last 15 minutes. It also exits when ctx is cancelled.
-func (s *Server) idleShutdown(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Second)
+func (s *Server) idleShutdown(ctx context.Context, tick, limit time.Duration) {
+	ticker := time.NewTicker(tick)
 	defer ticker.Stop()
 	for {
 		select {
@@ -146,7 +163,7 @@ func (s *Server) idleShutdown(ctx context.Context) {
 			s.lastMu.RLock()
 			idle := time.Since(s.lastReq)
 			s.lastMu.RUnlock()
-			if idle > 15*time.Minute {
+			if idle > limit {
 				s.Close()
 				return
 			}
@@ -188,6 +205,12 @@ func withMethod(want string, next http.HandlerFunc) http.HandlerFunc {
 // handler3 is a per-route handler that also receives the store and the
 // operator name. The mutation handlers share this signature.
 type handler3 func(http.ResponseWriter, *http.Request, *store.Store, string)
+
+// Idle-shutdown timing; variables so tests can shorten them.
+var (
+	idleTick  = 30 * time.Second
+	idleLimit = 15 * time.Minute
+)
 
 // netListen is a testable wrapper around net.Listen.
 var netListen = net.Listen

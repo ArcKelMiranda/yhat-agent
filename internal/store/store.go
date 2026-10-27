@@ -9,9 +9,10 @@
 //
 // Pragma guarantees
 //
-// Open always applies two PRAGMAs on every connection:
+// Open always applies these PRAGMAs on every connection:
 //   - journal_mode=WAL  (Write-Ahead Logging for concurrency)
 //   - foreign_keys=ON   (referential integrity for upload_queue → memories)
+//   - busy_timeout=5000 (wait up to 5s on a lock instead of failing at once)
 //
 // BR13 note
 //
@@ -169,7 +170,7 @@ type Store struct {
 // Returns ErrInvalidField if the schema_version row is missing or refers to
 // a schema newer than CurrentSchemaVersion.
 func Open(path string) (*Store, error) {
-	dsn := path + "?_pragma=journal_mode(WAL)&_pragma=foreign_keys(on)"
+	dsn := path + "?_pragma=journal_mode(WAL)&_pragma=foreign_keys(on)&_pragma=busy_timeout(5000)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("sql.Open: %w", err)

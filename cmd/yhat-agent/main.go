@@ -627,7 +627,12 @@ func runBandeja() {
 
 	fmt.Println("\nPresiona Ctrl+C para detener el servidor.")
 
-	srv.Wait()
+	if err := srv.Wait(); err != nil {
+		fmt.Fprintf(os.Stderr, "bandeja: server stopped: %v\n", err)
+		srv.Close()
+		s.Close()
+		os.Exit(1)
+	}
 }
 
 // runBandejaPrompt is called after install to offer to open bandeja.
