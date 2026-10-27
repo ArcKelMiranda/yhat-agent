@@ -93,6 +93,7 @@ Options:
   --yes            Required for uninstall to confirm destructive action
   --json           Output status in JSON format
   --dry-run        Show what would be done without making changes (uninstall only)
+  --claude-code    Force Claude Code setup (skill + MCP) on install; otherwise done when ~/.claude exists
   --no-bandeja     Skip opening bandeja after install (install command only)
   --central-token  Override the central bearer token from config.yaml
 ` + mcpUsageNote)
@@ -108,6 +109,12 @@ func runInstall() {
 	// Register MCP servers (Windows only; no-op on other platforms).
 	if err := runInstallMCP(); err != nil {
 		fmt.Fprintf(os.Stderr, "MCP registration failed (legacy assets may already be installed): %v\n", err)
+		os.Exit(1)
+	}
+
+	// Claude Code: skill + MCP (when ~/.claude exists or --claude-code is set).
+	if err := runInstallClaudeCode(); err != nil {
+		fmt.Fprintf(os.Stderr, "Claude Code setup failed (OpenCode assets already installed): %v\n", err)
 		os.Exit(1)
 	}
 
@@ -152,6 +159,12 @@ func runStatus() {
 		os.Exit(1)
 	}
 
+	claude, err := yhatagent.ClaudeCodeStatus()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "status failed: %v\n", err)
+		os.Exit(1)
+	}
+
 	// F1-C: read Cerebro config and state; open store to count memories.
 	cerebro := runStatusCerebro(useJSON)
 
@@ -164,6 +177,7 @@ func runStatus() {
 		cerebroStatus["files"] = result.Files
 		cerebroStatus["candidates"] = result.Candidates
 		cerebroStatus["has_candidate"] = result.HasCandidate
+		cerebroStatus["claude_code"] = claude
 		cerebroStatus["cerebro"] = cerebro
 		data, _ := json.MarshalIndent(cerebroStatus, "", "  ")
 		fmt.Println(string(data))
@@ -181,6 +195,8 @@ func runStatus() {
 			fmt.Printf("    %s\n", c)
 		}
 	}
+
+	fmt.Printf("  Claude Code skill: %s (%s)\n", claude.TargetPath, claude.Message)
 
 	fmt.Printf("\n  Assets:\n")
 	for _, f := range result.Files {
@@ -312,6 +328,10 @@ func runUninstall() {
 			fmt.Fprintf(os.Stderr, "uninstall failed: %v\n", err)
 		}
 		os.Exit(1)
+	}
+
+	if claudeCodeWanted() {
+		runUninstallClaudeCode(useJSON)
 	}
 
 	// For JSON mode: output valid JSON, then exit nonzero if errors exist

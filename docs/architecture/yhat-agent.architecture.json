@@ -7,7 +7,7 @@
     "quality_profile": "showcase",
     "locale": "en",
     "repository": {
-      "url": "git@github-agent:ArcKelMiranda/yhat-agent.git",
+      "url": "https://github.com/ArcKelMiranda/yhat-agent.git",
       "link_mode": "local-only",
       "revision": "96dc34955e88e0b613f372eb74e462b77c728c42"
     },
@@ -287,7 +287,7 @@
       "id": "bandeja",
       "type": "frontend",
       "label": "Bandeja",
-      "sublabel": "127.0.0.1 · one-shot token",
+      "sublabel": "loopback · one-shot token",
       "pos": [
         655,
         200
@@ -480,7 +480,7 @@
       "dot": "emerald",
       "title": "Approval",
       "items": [
-        "Bandeja binds 127.0.0.1 on a random port and guards every route with a one-shot token",
+        "Bandeja binds loopback on a random port and guards every route with a one-shot token",
         "Approve validates, reject stores a reason, edit rewrites the record before re-validation",
         "Server shuts down after 15 idle minutes; the Enviados section shows rejections and their reason"
       ]

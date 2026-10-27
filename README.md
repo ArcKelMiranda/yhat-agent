@@ -22,6 +22,19 @@ yhat-agent version  # Show version and build information
 yhat-agent uninstall --yes   # Remove managed files (requires confirmation)
 ```
 
+### Claude Code
+
+`yhat-agent install` also sets up [Claude Code](https://claude.com/claude-code) when `~/.claude`
+exists (or `CLAUDE_CONFIG_DIR` points to an existing directory), or when you pass `--claude-code`:
+
+- Installs the skill to `~/.claude/skills/yhat-memory-capture/SKILL.md` (adapted frontmatter; a
+  differing existing file is never overwritten, a `.yhat-agent-new` candidate is written instead).
+- Registers the MCP server via `claude mcp add --scope user yhat -- <yhat-agent> mcp`
+  (skipped if `yhat` is already registered; if `claude` is not on PATH the command is printed).
+
+`status` reports the skill state. `uninstall --yes` removes the skill (only if unmodified) and runs
+`claude mcp remove --scope user yhat`.
+
 ### Update behavior
 
 `yhat-agent update` downloads binaries directly from GitHub Releases using the stable
