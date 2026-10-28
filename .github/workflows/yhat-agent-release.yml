@@ -42,7 +42,14 @@ jobs:
             exit 1
           fi
 
-          # Tag is valid — output for downstream jobs
+          # The build jobs check out this exact tag. Fail here, before any
+          # runner is started, if it has not been pushed yet.
+          if ! git ls-remote --exit-code --tags "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${TAG}" > /dev/null; then
+            echo "ERROR: tag '${TAG}' does not exist in ${GITHUB_REPOSITORY}; push it first (git tag ${TAG} && git push origin ${TAG})" >&2
+            exit 1
+          fi
+
+          # Tag is valid and exists — output for downstream jobs
           echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
 
   build:
