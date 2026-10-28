@@ -63,12 +63,13 @@
       InstallerVersion="200"
       InstallPrivileges="limited"
       InstallScope="perUser"
+      Platform="x64"
       Description="YHat Agent — Cerebro YHat v1.2 operator agent"
       Compressed="yes"
       Keywords="MCP;OpenCode;Claude;YHat;AI"/>
 
     <!-- Single disk image; cabinet embedded in the MSI. -->
-    <Media Id="1" Cabinet="yhat-agent.cab" EmbedCab="yes"/>
+    <Media Id="1" Cabinet="yhat.cab" EmbedCab="yes"/>
 
     <!--
       Upgrade — remove any prior version before installing this one.
@@ -85,9 +86,7 @@
         YHAT_INSTALL_CMD       — set by CA_Install_CMD after CostFinalize
         YHAT_UNINSTALL_CMD      — set by CA_ReadUninstPath after CostFinalize
     -->
-    <Property Id="ALLUSERS"/>
-    <Property Id="YHAT_INSTALL_CMD"/>
-    <Property Id="YHAT_UNINSTALL_CMD"/>
+    <Property Id="WIXUI_INSTALLDIR" Value="YHATAGENT"/>
 
     <!--
       Directory tree.
@@ -120,9 +119,17 @@
       <File
         Id="FILE_yhat_agent_exe"
         Source="$(var.YHAT_SOURCE)"
-        KeyPath="yes"
-        Compressed="yes"
+        KeyPath="no"
         Vital="yes"/>
+      <RemoveFolder Id="RM_YHATAGENT" Directory="YHATAGENT" On="uninstall"/>
+      <RemoveFolder Id="RM_INSTALLFOLDER" Directory="INSTALLFOLDER" On="uninstall"/>
+      <RegistryValue
+        Root="HKCU"
+        Key="Software\YHat Agent"
+        Name="Installed"
+        Type="integer"
+        Value="1"
+        KeyPath="yes"/>
     </Component>
 
     <!--
@@ -193,10 +200,9 @@
     -->
     <CustomAction
       Id="CA_Install_CMD"
-      Property="YHAT_INSTALL_CMD"
-      Value="cmd /c &quot;[INSTALLFOLDER]yhat-agent.exe&quot; install --no-bandeja"
-      Execute="immediate"
-      Return="ignore"/>
+      Property="CA_Install"
+      Value="cmd /c &quot;[YHATAGENT]yhat-agent.exe&quot; install --no-bandeja"
+      Execute="immediate"/>
 
     <!--
       CA_Install  (deferred custom action)
@@ -219,10 +225,9 @@
     -->
     <CustomAction
       Id="CA_ReadUninstPath"
-      Property="YHAT_UNINSTALL_CMD"
-      Value="cmd /c &quot;[INSTALLFOLDER]yhat-agent.exe&quot; uninstall --yes"
-      Execute="immediate"
-      Return="ignore"/>
+      Property="WixQuietExecCmdLine"
+      Value="cmd /c &quot;[YHATAGENT]yhat-agent.exe&quot; uninstall --yes"
+      Execute="immediate"/>
 
     <!--
       CA_Uninstall  (immediate custom action)
@@ -270,7 +275,7 @@
       </Custom>
 
       <!-- Run yhat-agent install (deferred, after transaction starts). -->
-      <Custom Action="CA_Install" After="InstallInitialize">
+      <Custom Action="CA_Install" After="InstallFiles">
         NOT Installed
       </Custom>
 
