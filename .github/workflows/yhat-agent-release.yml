@@ -275,8 +275,8 @@ jobs:
           LIGHT="${WIX_DIR}/light.exe"
 
           # YHAT_SOURCE_DIR must be a Windows absolute path for WiX.
-          SRC_ABS="$(pwd)/dist/yhat-agent_windows_amd64.exe"
-          SRC_ABS="${SRC_ABS//\//\\}"   # forward slash → backslash
+          # Git Bash reports /d/a/...; cygpath turns it into D:\a\... for WiX.
+          SRC_ABS="$(cygpath -w "$(pwd)/dist/yhat-agent_windows_amd64.exe")"
           echo "Source absolute path: $SRC_ABS"
           echo "MSI version: $MSI_VERSION"
 
