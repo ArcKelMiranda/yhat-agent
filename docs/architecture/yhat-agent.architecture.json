@@ -9,7 +9,7 @@
     "repository": {
       "url": "https://github.com/ArcKelMiranda/yhat-agent.git",
       "link_mode": "local-only",
-      "revision": "96dc34955e88e0b613f372eb74e462b77c728c42"
+      "revision": "2ccd7753b3850a0e6cede5c240ffd4b8fd486f8f"
     },
     "views": [
       {
@@ -41,7 +41,7 @@
       "id": "clients",
       "type": "frontend",
       "label": "AI Clients",
-      "sublabel": "OpenCode · Claude Desktop",
+      "sublabel": "OpenCode · Desktop · Code",
       "pos": [
         40,
         40
@@ -60,6 +60,11 @@
           "path": "internal/clients/clients.go",
           "line": 297,
           "label": "Claude Desktop registration"
+        },
+        {
+          "path": "cmd/yhat-agent/install_claude_code.go",
+          "line": 1,
+          "label": "Claude Code registration"
         }
       ]
     },
@@ -135,7 +140,7 @@
         165,
         70
       ],
-      "tag": "3 tables",
+      "tag": "3 tables · .md",
       "sources": [
         {
           "path": "internal/store/migrations/001_init.sql",
@@ -148,9 +153,9 @@
           "label": "upload_queue"
         },
         {
-          "path": "internal/store/store.go",
-          "line": 172,
-          "label": "WAL pragmas"
+          "path": "internal/store/markdown.go",
+          "line": 36,
+          "label": "Markdown copy of memories"
         }
       ]
     },
@@ -226,7 +231,7 @@
         165,
         70
       ],
-      "tag": "install · status · update · mcp",
+      "tag": "install · update · mcp",
       "sources": [
         {
           "path": "cmd/yhat-agent/main.go",
@@ -473,7 +478,8 @@
       "items": [
         "MCP tools: fts5_search, propose_memory, list_pending, get_memory, search_brain, share_memory",
         "propose_memory always writes status=proposed and takes the author from the operator config",
-        "BR13 filter scans title, content and context, and masks the rejected secret"
+        "BR13 filter scans title, content and context, and masks the rejected secret",
+        "Every memory write also renders ~/.yhat/memories/<id>.md; export-md rewrites them all"
       ]
     },
     {
