@@ -1056,3 +1056,53 @@ func TestRED26_RejectEmptyReasonAllowed(t *testing.T) {
 		t.Errorf("reject empty reason: want ok=true, got %s", r.Err)
 	}
 }
+
+// The card shows a short preview but the whole text is one click away, and the
+// context (where an imported prospect came from) is visible.
+func TestPendientesShowsFullContentAndContext(t *testing.T) {
+	s, _, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	srv, err := bandeja.Start(ctx, s)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer srv.Close()
+
+	tail := "FINAL-DEL-TEXTO-LARGO"
+	long := strings.Repeat("palabra ", 60) + tail // well over the 200-rune preview
+	ctxText := "Fuente: Engram · proyecto yhat-knowledge · observación obs-xyz"
+	if _, err := s.ProposeMemory(ctx, store.Memory{
+		Type: store.MemoryTypeDecision, Title: "Texto largo", Content: long, Context: &ctxText, Author: "a",
+	}); err != nil {
+		t.Fatalf("ProposeMemory: %v", err)
+	}
+	short := "Texto corto sin recorte"
+	if _, err := s.ProposeMemory(ctx, store.Memory{
+		Type: store.MemoryTypeRule, Title: "Texto corto", Content: short, Author: "a",
+	}); err != nil {
+		t.Fatalf("ProposeMemory: %v", err)
+	}
+
+	resp := getPage(t, baseURL(t, srv.URL()), extractToken(t, srv.URL()))
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	page := string(body)
+
+	if !strings.Contains(page, tail) {
+		t.Error("the end of a long text is not reachable on the page")
+	}
+	if !strings.Contains(page, "<details") {
+		t.Error("long text should expand with <details>")
+	}
+	if strings.Count(page, "<details") != 1 {
+		t.Errorf("a short text must not get an expander; <details> count = %d", strings.Count(page, "<details"))
+	}
+	if !strings.Contains(page, "obs-xyz") {
+		t.Error("context is not shown")
+	}
+	if !strings.Contains(page, short) {
+		t.Error("short text missing")
+	}
+}

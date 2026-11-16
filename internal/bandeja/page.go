@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ArcKelMiranda/yhat-agent/internal/store"
 )
@@ -51,6 +52,8 @@ func memCard(mem store.Memory, section string) string {
 	id := template.HTMLEscapeString(mem.ID)
 	title := template.HTMLEscapeString(mem.Title)
 	contentEsc := template.HTMLEscapeString(contentPreview)
+	fullEsc := template.HTMLEscapeString(mem.Content)
+	longContent := utf8.RuneCountInString(mem.Content) > 200
 	typeLabel := template.HTMLEscapeString(mem.Type)
 
 	var actions string
@@ -69,13 +72,29 @@ func memCard(mem store.Memory, section string) string {
 			template.HTMLEscapeString(*mem.RejectReason))
 	}
 
+	// Long texts keep the short preview as the summary and expand to the whole
+	// text; short ones are shown as they are.
+	var body string
+	if longContent {
+		body = fmt.Sprintf(`<details class="full"><summary class="content"><span class="preview">%s</span> <span class="more">Ver completo</span><span class="less">Ver menos</span></summary><p class="content full-text">%s</p></details>`,
+			contentEsc, fullEsc)
+	} else {
+		body = fmt.Sprintf(`<p class="content">%s</p>`, fullEsc)
+	}
+
+	var contextStr string
+	if mem.Context != nil && *mem.Context != "" {
+		contextStr = fmt.Sprintf(`<p class="source">%s</p>`, template.HTMLEscapeString(*mem.Context))
+	}
+
 	return fmt.Sprintf(`<div class="card" data-id="%s">
   <div class="card-header">
     <span class="type">%s</span>
     <span class="age">%s</span>
   </div>
   <h3>%s</h3>
-  <p class="content">%s</p>
+  %s
+  %s
   %s
   %s
 </div>`,
@@ -83,7 +102,8 @@ func memCard(mem store.Memory, section string) string {
 		typeLabel,
 		age,
 		title,
-		contentEsc,
+		body,
+		contextStr,
 		reasonStr,
 		actions,
 	)
@@ -146,6 +166,14 @@ section { margin-bottom: 32px; }
 .age { font-size: 0.75rem; color: #888; }
 .card h3 { font-size: 1rem; margin-bottom: 6px; color: #111; }
 .content { font-size: 0.875rem; color: #555; line-height: 1.5; margin-bottom: 10px; word-break: break-word; }
+.content.full-text { white-space: pre-wrap; margin-top: 8px; padding: 10px; background: #fafafa; border-left: 3px solid #bbb; }
+details.full > summary { cursor: pointer; list-style: none; }
+details.full > summary::-webkit-details-marker { display: none; }
+.more { color: #1565c0; font-size: 0.8rem; white-space: nowrap; }
+.less { display: none; color: #1565c0; font-size: 0.8rem; }
+details.full[open] .more, details.full[open] .preview { display: none; }
+details.full[open] .less { display: inline; }
+.source { font-size: 0.75rem; color: #888; margin-bottom: 10px; word-break: break-word; }
 .reason { font-size: 0.8rem; color: #c62828; background: #ffebee; border-left: 3px solid #c62828; padding: 6px 10px; margin-top: 8px; border-radius: 0 4px 4px 0; }
 button { font-size: 0.8rem; padding: 5px 12px; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer; margin-right: 6px; transition: background 0.15s; }
 button:hover { background: #f0f0f0; }
