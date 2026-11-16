@@ -17,8 +17,8 @@ Branch: feat/import-engram (from dev). Delivery: ask-on-risk. Test runner: `go t
 
 - [x] T1 (S4) Migration 002 widening `memories.type`; Go validation, MCP enum, central-api doc. Route: inline. Risk: item 1 (migration of stored data), item 3 (type values consumed by yhat-central). Evidence: tests in internal/store/migration_types_test.go (RED then GREEN), `go test ./...` green.
 - [x] T2 (S2, S3) `internal/engram` read-only reader with watermark query. Route: inline. Evidence: internal/engram tests green; migration failure/rollback and foreign_keys tests added (the independent verifier had no tools and returned UNVERIFIED, so those probes were run inline).
-- [ ] T3 (S3, S5, S6) Mapping Engram observation to memory; dedupe and sensitive filter. Route: inline.
-- [ ] T4 (S2, S6, S7) `import-engram` command, watermark in `sync_state`, help and docs. Route: inline.
+- [x] T3 (S3, S5, S6) Mapping Engram observation to memory; dedupe and sensitive filter. Route: inline. Evidence: cmd/yhat-agent/import_engram_test.go (RED: undefined, then GREEN).
+- [x] T4 (S2, S6, S7) `import-engram` command, watermark in `sync_state`, help and docs. Route: inline. Evidence: dry run and real import against the local Engram into a scratch home: 16 prospects, second run 0, Engram file hash unchanged.
 - [ ] T5 Architecture map and README refresh. Route: inline.
 
 ## Log

@@ -65,6 +65,8 @@ func main() {
 		os.Exit(exitCode)
 	case "export-md":
 		os.Exit(runExportMD())
+	case "import-engram":
+		os.Exit(runImportEngram(args, os.Stdout))
 	case "version", "--version", "-v":
 		runVersion()
 	case "help", "--help", "-h":
@@ -91,6 +93,9 @@ Commands:
   mcp        Run MCP stdio server (experimental F0 prototype)
   sync       Drain upload queue and sync with central repository
   export-md  Write every local memory as Markdown to ~/.yhat/memories
+  import-engram [--db <path>] [--dry-run]
+             Read your local Engram and add prospects for the source of truth
+             (project yhat-knowledge or yhat.* keys) as proposed memories
   version    Show version and build information
   help       Show this help message
 

@@ -20,6 +20,7 @@ yhat-agent status   # Report installation state without making changes
 yhat-agent update   # Download and verify latest release from GitHub
 yhat-agent version  # Show version and build information
 yhat-agent export-md   # Write every local memory as Markdown to ~/.yhat/memories
+yhat-agent import-engram [--db <path>] [--dry-run]   # Bring prospects from your local Engram
 yhat-agent bandeja [--idle 10m]   # Open the approval inbox; closes after --idle without requests (default 10m)
 yhat-agent uninstall --yes   # Remove managed files (requires confirmation)
 ```
@@ -44,6 +45,27 @@ context) each time it is proposed, validated, rejected, edited, archived or shar
 (`~/.yhat/yhat.db`) stays the source of truth: the `.md` files are a readable, git-friendly copy.
 A failed `.md` write is logged and never fails the operation. Run `yhat-agent export-md` to
 (re)write all of them, for example for memories created before this feature.
+
+### Prospects from Engram
+
+`yhat-agent import-engram` reads your local Engram (`~/.engram/engram.db`, or
+`$ENGRAM_DATA_DIR/engram.db`) and adds prospects for the source of truth. The file is opened
+read-only and is never modified.
+
+- **What counts as a prospect:** observations of the Engram project `yhat-knowledge`, plus any
+  observation whose topic key starts with `yhat.`. Deleted observations are ignored.
+- **Type:** taken from the topic key (`yhat.map.…` is a `mapping`, `yhat.rule.…` a `rule`, and so
+  on); without a key, from the Engram type (`decision`, `bugfix` becomes `anomaly`, `config`
+  becomes `technical-rule`, `pattern` becomes `process`; anything else is an `observation`).
+- **Author:** the configured operator of the person who runs the import.
+- **State:** everything arrives as `proposed`. Nothing is validated or shared until you approve it
+  in the bandeja.
+- **Skipped, with a reason in the output:** titles over 200 characters, content over 10000
+  characters, anything the sensitive-content filter flags, and duplicates of a live memory.
+- **Incremental:** the agent remembers how far it read, so the next run brings only new or edited
+  observations. `--dry-run` lists what would be imported and leaves that position untouched.
+
+Each prospect keeps its origin in the context field (project, topic key and Engram observation id).
 
 ### Update behavior
 
