@@ -77,8 +77,8 @@ func TestEmbeddedMigrationApplies(t *testing.T) {
 	if err != nil {
 		t.Errorf("schema_version row: %v", err)
 	}
-	if version != "1" {
-		t.Errorf("schema_version: want 1, got %q", version)
+	if version != "2" {
+		t.Errorf("schema_version: want 2, got %q", version)
 	}
 }
 

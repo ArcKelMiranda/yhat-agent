@@ -181,7 +181,7 @@ succeeds. File name is the memory's UUID (without extension).
 |-------------|----------|------------------------------------------------|
 | `id`        | string   | Memory UUID (matches file name for LocalDir; server-assigned for HTTP) |
 | `origin`    | string   | Always `"local"` for outgoing memories          |
-| `type`      | string   | `decision`, `rule`, `anomaly`, `improvement`   |
+| `type`      | string   | `decision`, `rule`, `anomaly`, `improvement`, `observation`, `assumption`, `process`, `mapping`, `exception`, `entity-definition`, `integration`, `technical-rule`|
 | `title`     | string   | 1–200 characters                               |
 | `content`   | string   | 1–10000 characters                             |
 | `context`   | string?  | Optional context; absent if empty              |

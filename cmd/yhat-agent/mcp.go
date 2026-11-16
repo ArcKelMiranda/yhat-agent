@@ -551,7 +551,7 @@ func storeErrorResult(err error) *mcp.CallToolResult {
 		} else if strings.Contains(msg, "content length") {
 			msg = "Campo inválido: el contenido debe tener entre 1 y 10000 caracteres."
 		} else if strings.Contains(msg, "tipo") || strings.Contains(msg, "type") {
-			msg = "Campo inválido: tipo debe ser decision, rule, anomaly o improvement."
+			msg = "Campo inválido: tipo debe ser uno de: " + strings.Join(store.MemoryTypes, ", ") + "."
 		} else {
 			msg = "Error interno. Intenta de nuevo."
 		}
@@ -658,8 +658,8 @@ func newMCPServer() *mcp.Server {
 			"properties": map[string]any{
 				"type": map[string]any{
 					"type":        "string",
-					"description": "Tipo de memoria: decision, rule, anomaly o improvement.",
-					"enum":        []any{"decision", "rule", "anomaly", "improvement"},
+					"description": "Tipo de memoria: decision, rule, anomaly, improvement, observation, assumption, process, mapping, exception, entity-definition, integration o technical-rule.",
+					"enum":        memoryTypeEnum(),
 				},
 				"title": map[string]any{
 					"type":        "string",
@@ -943,4 +943,13 @@ func runSelftestResult(ctx context.Context) (*SelftestReport, error) {
 	report.Synthetic = true
 
 	return report, nil
+}
+
+// memoryTypeEnum returns the accepted memory types as a JSON-schema enum.
+func memoryTypeEnum() []any {
+	out := make([]any, len(store.MemoryTypes))
+	for i, t := range store.MemoryTypes {
+		out[i] = t
+	}
+	return out
 }

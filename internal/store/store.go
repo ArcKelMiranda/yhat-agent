@@ -44,7 +44,7 @@ var migrationsFS embed.FS
 
 // CurrentSchemaVersion is the schema version this package knows how to apply.
 // Bump this constant and add a new migration file to evolve the schema.
-const CurrentSchemaVersion = 1
+const CurrentSchemaVersion = 2
 
 // --------------------------------------------------------------------------
 // Constants: MemoryType
@@ -55,7 +55,34 @@ const (
 	MemoryTypeRule        = "rule"
 	MemoryTypeAnomaly     = "anomaly"
 	MemoryTypeImprovement = "improvement"
+
+	// Added by migration 002 (schema version 2).
+	MemoryTypeObservation      = "observation"
+	MemoryTypeAssumption       = "assumption"
+	MemoryTypeProcess          = "process"
+	MemoryTypeMapping          = "mapping"
+	MemoryTypeException        = "exception"
+	MemoryTypeEntityDefinition = "entity-definition"
+	MemoryTypeIntegration      = "integration"
+	MemoryTypeTechnicalRule    = "technical-rule"
 )
+
+// MemoryTypes lists every accepted memory type, in display order.
+var MemoryTypes = []string{
+	MemoryTypeDecision, MemoryTypeRule, MemoryTypeAnomaly, MemoryTypeImprovement,
+	MemoryTypeObservation, MemoryTypeAssumption, MemoryTypeProcess, MemoryTypeMapping,
+	MemoryTypeException, MemoryTypeEntityDefinition, MemoryTypeIntegration, MemoryTypeTechnicalRule,
+}
+
+// ValidMemoryType reports whether t is an accepted memory type.
+func ValidMemoryType(t string) bool {
+	for _, v := range MemoryTypes {
+		if v == t {
+			return true
+		}
+	}
+	return false
+}
 
 // --------------------------------------------------------------------------
 // Constants: Status
@@ -118,7 +145,7 @@ var (
 type Memory struct {
 	ID            string     `json:"id"`
 	Origin        string     `json:"origin"`            // 'local' or 'team'
-	Type          string     `json:"type"`              // decision, rule, anomaly, improvement
+	Type          string     `json:"type"`              // one of MemoryTypes
 	Title         string     `json:"title"`             // 1–200 characters
 	Content       string     `json:"content"`           // 1–10000 characters
 	Context       *string    `json:"context,omitempty"` // nullable
@@ -244,8 +271,7 @@ func (s *Store) runMigrations() error {
 			return fmt.Errorf("%w: schema version %d is newer than supported version %d",
 				ErrInvalidField, storedVersion, CurrentSchemaVersion)
 		}
-		// storedVersion <= CurrentSchemaVersion: already migrated, nothing to do.
-		return nil
+		return s.upgradeFrom(storedVersion)
 	}
 
 	// Fresh DB: apply the migration.
@@ -260,7 +286,75 @@ func (s *Store) runMigrations() error {
 	if err != nil {
 		return fmt.Errorf("set schema_version: %w", err)
 	}
+	return s.upgradeFrom(1)
+}
+
+// upgradeFrom applies every migration after the stored schema version.
+func (s *Store) upgradeFrom(version int) error {
+	if version < 2 {
+		if err := s.applyWidenTypes(); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// applyWidenTypes runs migration 002 (rebuild of memories with 12 types).
+// foreign_keys must be OFF while the parent table is dropped, and the PRAGMA is
+// a no-op inside a transaction, so it is switched around the transaction. The
+// store holds a single connection, so the PRAGMA applies to the same session.
+func (s *Store) applyWidenTypes() error {
+	migrationSQL, err := migrationsFS.ReadFile("migrations/002_widen_types.sql")
+	if err != nil {
+		return fmt.Errorf("read embedded migration 002: %w", err)
+	}
+	if _, err := s.db.Exec("PRAGMA foreign_keys=OFF"); err != nil {
+		return fmt.Errorf("disable foreign_keys: %w", err)
+	}
+	defer s.db.Exec("PRAGMA foreign_keys=ON")
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin migration 002: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Dropping memories drops its triggers (FTS sync); remember them to recreate.
+	rows, err := tx.Query(`SELECT sql FROM sqlite_master WHERE type='trigger' AND tbl_name='memories' AND sql IS NOT NULL`)
+	if err != nil {
+		return fmt.Errorf("read memories triggers: %w", err)
+	}
+	var triggers []string
+	for rows.Next() {
+		var ddl string
+		if err := rows.Scan(&ddl); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan trigger: %w", err)
+		}
+		triggers = append(triggers, ddl)
+	}
+	rows.Close()
+
+	if _, err := tx.Exec(string(migrationSQL)); err != nil {
+		return fmt.Errorf("apply migration 002: %w", err)
+	}
+	for _, ddl := range triggers {
+		if _, err := tx.Exec(ddl); err != nil {
+			return fmt.Errorf("recreate trigger: %w", err)
+		}
+	}
+
+	var violations int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&violations); err != nil {
+		return fmt.Errorf("foreign_key_check: %w", err)
+	}
+	if violations > 0 {
+		return fmt.Errorf("migration 002 left %d foreign key violations", violations)
+	}
+	if _, err := tx.Exec(`UPDATE sync_state SET value='2' WHERE key='schema_version'`); err != nil {
+		return fmt.Errorf("set schema_version 2: %w", err)
+	}
+	return tx.Commit()
 }
 
 // ------------------------------------------------------------------------------------------------------------------------------------------
@@ -303,8 +397,7 @@ func (s *Store) ProposeMemory(ctx context.Context, mem Memory) (Memory, error) {
 	}
 
 	// Validate type and origin.
-	if mem.Type != MemoryTypeDecision && mem.Type != MemoryTypeRule &&
-		mem.Type != MemoryTypeAnomaly && mem.Type != MemoryTypeImprovement {
+	if !ValidMemoryType(mem.Type) {
 		return Memory{}, fmt.Errorf("%w: type %q", ErrInvalidField, mem.Type)
 	}
 

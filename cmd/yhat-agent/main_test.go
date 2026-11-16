@@ -88,8 +88,8 @@ func TestRunInstallF1(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetSyncState schema_version: %v", err)
 	}
-	if sv != "1" {
-		t.Errorf("schema_version in DB: got %q, want \"1\"", sv)
+	if sv != "2" {
+		t.Errorf("schema_version in DB: got %q, want \"2\"", sv)
 	}
 }
 
