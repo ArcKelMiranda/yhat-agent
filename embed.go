@@ -14,7 +14,7 @@ var Assets embed.FS
 
 // Asset names used for installation targets.
 const (
-	AgentAsset  = "assets/agents/yhat-memory-capture.md"
+	AgentAsset = "assets/agents/yhat-memory-capture.md"
 	SkillAsset = "assets/skills/yhat-memory-capture/SKILL.md"
 )
 

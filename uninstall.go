@@ -163,7 +163,7 @@ func Uninstall(confirmed bool) (*UninstallResult, error) {
 		if err := verifyFileIntegrity(targetPath, asset.InstalledHash); err != nil {
 			// Integrity mismatch is an explicit error — not merely skipped.
 			// This signals that the file may have been tampered with or corrupted,
-		// and we cannot safely remove it without risking damage.
+			// and we cannot safely remove it without risking damage.
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: integrity mismatch: %v", targetPath, err))
 			// Do NOT continue here — manifest entry is preserved for investigation
 			continue

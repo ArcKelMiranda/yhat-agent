@@ -12,8 +12,8 @@ import (
 type InstallResult struct {
 	AssetKey   string
 	TargetPath string
-	State     InstallState
-	Message   string
+	State      InstallState
+	Message    string
 }
 
 // Install copies the embedded assets to their target locations.
