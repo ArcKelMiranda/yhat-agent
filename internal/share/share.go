@@ -137,9 +137,11 @@ func Sync(ctx context.Context, s *store.Store, tp Transport) (Report, error) {
 	return report, nil
 }
 
-// PullAndInsert pulls team-approved memories from the transport and inserts
-// them as origin='team' records with team_status='approved'.
-// It persists the pull cursor in sync_state.
+// PullAndInsert pulls the team memories from the transport and stores them as
+// origin='team' records (team_status 'approved' or 'retired'). A record that is
+// already stored only has its team status updated. The returned count is the
+// number of records inserted or changed. It persists the pull cursor in
+// sync_state.
 func PullAndInsert(ctx context.Context, s *store.Store, tp Transport) (int, error) {
 	cursor := ""
 	cursorVal, err := s.GetSyncState(ctx, "pull_cursor")
@@ -154,6 +156,12 @@ func PullAndInsert(ctx context.Context, s *store.Store, tp Transport) (int, erro
 
 	inserted := 0
 	for _, tp := range result.Memories {
+		// A memory without a team status cannot be stored (the column only
+		// accepts 'approved' or 'retired'). Skip it instead of failing the
+		// whole batch: one malformed record must not block the others.
+		if tp.TeamStatus != "approved" && tp.TeamStatus != "retired" {
+			continue
+		}
 		mem := store.Memory{
 			RemoteID:   &tp.ID,
 			Origin:     store.OriginTeam,
@@ -168,9 +176,18 @@ func PullAndInsert(ctx context.Context, s *store.Store, tp Transport) (int, erro
 		}
 		_, insertErr := s.InsertTeamMemory(ctx, mem)
 		if insertErr != nil {
-			// Duplicate remote_id is expected when re-syncing; skip.
+			// Duplicate remote_id is expected when re-syncing: the record is
+			// already stored, so only apply a change of team status (the team
+			// retiring a memory this agent stored as approved).
 			if !strings.Contains(insertErr.Error(), "UNIQUE constraint") {
 				return inserted, fmt.Errorf("InsertTeamMemory %s: %w", tp.ID, insertErr)
+			}
+			changed, applyErr := s.ApplyTeamStatus(ctx, tp.ID, tp.TeamStatus)
+			if applyErr != nil {
+				return inserted, fmt.Errorf("ApplyTeamStatus %s: %w", tp.ID, applyErr)
+			}
+			if changed {
+				inserted++
 			}
 		} else {
 			inserted++

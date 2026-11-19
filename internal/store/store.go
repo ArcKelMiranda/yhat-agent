@@ -748,6 +748,26 @@ func (s *Store) InsertTeamMemory(ctx context.Context, mem Memory) (string, error
 	return id, nil
 }
 
+// ApplyTeamStatus sets the team status of an existing origin='team' record
+// (for example approved -> retired when the team retires a memory). It reports
+// whether the record changed; an unchanged or unknown remote id returns false.
+func (s *Store) ApplyTeamStatus(ctx context.Context, remoteID, teamStatus string) (bool, error) {
+	now := time.Now().UTC()
+	result, err := s.db.ExecContext(ctx,
+		`UPDATE memories SET team_status=?, team_updated_at=?, updated_at=?
+		 WHERE origin='team' AND remote_id=? AND team_status IS NOT ?`,
+		teamStatus, now, now, remoteID, teamStatus,
+	)
+	if err != nil {
+		return false, fmt.Errorf("ApplyTeamStatus: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("ApplyTeamStatus: %w", err)
+	}
+	return changed > 0, nil
+}
+
 // ------------------------------------------------------------------------------------------------------------------------------------------
 // UploadQueue
 // --------------------------------------------------------------------------/

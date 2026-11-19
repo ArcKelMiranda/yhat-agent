@@ -2,23 +2,28 @@
 
 **Version**: 1.2-F2 (stable for F2; F3 will extend without breaking F2)
 
-**Implementation status** (2026-10-08):
+**Implementation status** (2026-11-18):
 
-- `LocalDirTransport` and `HTTPTransport` both implemented in
-  `internal/share/transport.go` on `feat/cerebro-f2-http`. F0, F1,
-  and the F2-LocalDirTransport work on `main` are verified. The
-  F2-HTTPTransport is implemented, verifier-independent passes
-  8 new HTTPTransport tests + 2 config round-trip tests + 4 main
-  integration tests + 1 subprocess e2e against a mock F3 server
-  on `:28083`. The Windows CGO-free build SHA-256 is
-  `0bba2eb42c9018a87afd1f7e92f41c4025569a0350fd58426427f82647b0e967`.
-  **The F2-HTTPTransport is NOT yet committed to `main`**: the
-  parent paused before committing because 3 tests in
-  `internal/bandeja` are red since `c54642c` (F2-LocalDirTransport
-  was merged). See "Known F1-D bug" below.
-- F3 server lives at `/tmp/yhat-central` (separate repo, branch
-  `master`, commit `ea5481f`). Not yet pushed to GitHub; awaiting
-  the user to create `github.com/ArcKelMiranda/yhat-central`.
+- `LocalDirTransport` and `HTTPTransport` are both implemented in
+  `internal/share/transport.go` and **committed to `main`** (`70e637a`,
+  "feat(share): F2 HTTPTransport against the F3 central server"). The note
+  below that said the HTTP transport was not on `main` is obsolete.
+- The F1-D regression in `internal/bandeja` (3 red tests) is fixed: the
+  handlers are registered without a trailing slash and the method check lives
+  in the `withMethod` middleware. `internal/bandeja` is green.
+- `HTTPTransport` supports a private CA: `central_ca_file` (or
+  `--central-ca`) points to a PEM bundle whose certificates are added to the
+  system trust store. TLS verification is never disabled. This is what lets
+  the agent talk to a Yhat-YK central service with a self-signed certificate.
+- The client reads `team_status` from `GET /api/team`. When a server only
+  sends the S7 spelling (`status`), the client falls back to it, and a record
+  with neither is skipped instead of failing the whole pull.
+- Verified end-to-end against the Yhat-YK central service
+  (`yhat-knowledge`, service `yk-central`): a validated local memory is
+  pushed with its own UUID, approved in YK, and pulled back into the local
+  store as a `team` record.
+- The F3 server of the original plan lived at `/tmp/yhat-central` (separate
+  repo). Yhat-YK now hosts the central service, so that path is obsolete.
 
 This document describes the wire contract between the yhat-agent client and the
 central repository.
@@ -31,12 +36,13 @@ shared `Transport` interface (`Send`, `Pull`, `ApplyRejection`):
 | Transport              | Use case              | Config fields used                     |
 |------------------------|-----------------------|---------------------------------------|
 | `LocalDirTransport`     | Local dev / legacy    | `central_repo` (file path)            |
-| `HTTPTransport`         | F2 → F3 production   | `central_url` + `central_token`        |
+| `HTTPTransport`         | F2 → F3 production   | `central_url` + `central_token` (+ `central_ca_file`) |
 
 The dispatcher in `cmd/yhat-agent/sync.go` selects the transport by URL scheme:
 `http://` or `https://` → `HTTPTransport`; any other value → `LocalDirTransport`.
 
-The `central_url` and `central_token` fields are written to `config.yaml` by
+The `central_url`, `central_token` and `central_ca_file` fields are written to
+`config.yaml` by
 `yhat-agent install` when `YHAT_CENTRAL_URL` is set in the environment. The token
 is sourced from `YHAT_CENTRAL_TOKEN` if present; otherwise the operator edits
 `config.yaml` manually and replaces the `change-me` placeholder.
@@ -138,6 +144,14 @@ Returns a JSON array of team-approved memories. Response is `TeamPayload[]`.
 The cursor query parameter (`?cursor=<id>`) is reserved for F3 pagination.
 F2 clients send no cursor; F3 servers return a server-managed cursor.
 
+The response must be a **flat JSON array**: the client decodes it as a list of
+`TeamPayload` and does not read the `{"memories": [...]}` wrapped form.
+
+`team_status` is required. The local store only accepts `approved` or
+`retired`, so a record without a usable status is skipped (it never fails the
+whole pull). When the server does not send `team_status`, the client falls
+back to the S7 spelling `status` (`approved` or `retired`).
+
 ```json
 [
   {
@@ -220,7 +234,7 @@ File name is the server-assigned remote ID (UUID without extension).
 | `context`        | string?  | Optional context; absent if empty                 |
 | `author`         | string   | Original author or `"team"`                       |
 | `created_at`     | string   | RFC3339 UTC timestamp of original creation        |
-| `team_status`     | string   | Currently only `"approved"`; `"retired"` is F3    |
+| `team_status`     | string   | `"approved"` or `"retired"` (Yhat-YK retires a memory when a newer one replaces it, or a reviewer retires it) |
 | `team_updated_at` | string   | RFC3339 UTC timestamp of team approval             |
 
 ---
@@ -282,7 +296,22 @@ memory: proposed → validated → queued → sent → accepted
 | Feature        | F2 LocalDirTransport    | F2 HTTPTransport                   | F3 (future)                       |
 |----------------|-------------------------|------------------------------------|-------------------------------------|
 | Transport      | File-based (file://)     | HTTP with bearer auth              | HTTP with roster auth              |
-| Team approval  | N/A (F3 server)        | N/A (F3 server)                   | 3-of-5 quorum, roster from config |
+| Team approval  | N/A (central service)  | Yhat-YK review by impact (7-person team): 1 reviewer, or 2 distinct non-author reviewers for rule/decision/mapping/entity-definition | Yhat-YK (see its `docs/central-api.md`) |
 | Rejection      | Contract documented      | Stub: logs Spanish, returns nil     | Team reason captured at vote time  |
-| Retired        | N/A                     | N/A                                | `team_status: retired` + bandeja   |
+| Retired        | N/A                     | `team_status: retired` is applied to the stored record and hidden from search | bandeja view of retired (future) |
 | Cursor         | File-name cursor        | Empty (F3 will add server cursor) | Opaque server cursor (F3 TBD)    |
+
+## Retired memories (Yhat-YK)
+
+`GET /api/team` also returns the memories the team **retired** (`team_status:
+"retired"`, `team_updated_at` = retirement time). The extra keys `supersedes` /
+`superseded_by` that YK may add are ignored by the client. On every pull:
+
+- a memory not yet stored is inserted with the status it carries;
+- a memory already stored (same `remote_id`) only has its team status updated, so
+  an `approved` copy becomes `retired` locally;
+- retired team memories are not returned by `search_brain` / `fts5_search`;
+- retiring is final on the server: a retired memory is never served as approved
+  again.
+
+`yhat-agent sync` prints how many team memories were pulled (inserted or changed).

@@ -149,3 +149,42 @@ func TestRecordUploadFailure_UnknownMemory(t *testing.T) {
 		t.Errorf("RecordUploadFailure(unknown): want nil, got %v", err)
 	}
 }
+
+// TestSearchMemoriesFTS5_HidesRetiredTeamMemories verifies that a memory the
+// team retired is no longer returned by search, while approved team records
+// and local memories still are.
+func TestSearchMemoriesFTS5_HidesRetiredTeamMemories(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(t.TempDir() + "/search_retired.db")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer s.Close()
+	if err := s.EnsureFTS5(ctx); err != nil {
+		t.Fatalf("EnsureFTS5: %v", err)
+	}
+
+	insert := func(remoteID, title, status string) {
+		rid, st := remoteID, status
+		if _, err := s.InsertTeamMemory(ctx, store.Memory{
+			RemoteID: &rid, Type: store.MemoryTypeRule, Title: title,
+			Content: "Searchable body.", Author: "team", TeamStatus: &st,
+		}); err != nil {
+			t.Fatalf("InsertTeamMemory %s: %v", title, err)
+		}
+	}
+	insert("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "Zebra approved", "approved")
+	insert("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "Zebra retired", "retired")
+
+	hits, err := s.SearchMemoriesFTS5(ctx, `"zebra"`, 10)
+	if err != nil {
+		t.Fatalf("SearchMemoriesFTS5: %v", err)
+	}
+	if len(hits) != 1 || hits[0].Title != "Zebra approved" {
+		var titles []string
+		for _, h := range hits {
+			titles = append(titles, h.Title)
+		}
+		t.Fatalf("want only the approved record, got %v", titles)
+	}
+}

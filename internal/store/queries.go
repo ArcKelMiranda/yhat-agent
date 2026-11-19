@@ -102,6 +102,7 @@ func (s *Store) ListPendingMemories(ctx context.Context, limit int) ([]Memory, i
 // SearchMemoriesFTS5 executes a full-text search against the memories_fts FTS5
 // virtual table and returns the matching memories. The query must be a valid
 // FTS5 MATCH expression (literal phrase form with outer quotes).
+// Team memories the team retired are not returned.
 // Returns up to limit results.
 func (s *Store) SearchMemoriesFTS5(ctx context.Context, escapedQuery string, limit int) ([]Memory, error) {
 	if limit <= 0 {
@@ -115,6 +116,7 @@ func (s *Store) SearchMemoriesFTS5(ctx context.Context, escapedQuery string, lim
 		FROM memories m
 		JOIN memories_fts f ON m.rowid = f.rowid
 		WHERE memories_fts MATCH ?
+		  AND (m.team_status IS NULL OR m.team_status <> 'retired')
 		ORDER BY bm25(memories_fts)
 		LIMIT ?
 	`, escapedQuery, limit)
