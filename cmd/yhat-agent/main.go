@@ -586,6 +586,7 @@ func runInstallF1() error {
 	centralURL := os.Getenv("YHAT_CENTRAL_URL")
 	var centralRepo string
 	var centralToken string
+	var centralCAFile string
 
 	if centralURL != "" {
 		// YHAT_CENTRAL_URL set: use as HTTP transport URL.
@@ -594,17 +595,20 @@ func runInstallF1() error {
 		if centralToken == "" {
 			centralToken = "change-me"
 		}
+		// Optional PEM bundle with extra CAs to trust (self-signed central server).
+		centralCAFile = os.Getenv("YHAT_CENTRAL_CA_FILE")
 	} else {
 		// No YHAT_CENTRAL_URL: use placeholder as central_repo (legacy local-dir path).
 		centralRepo = "https://centro.example.invalid"
 	}
 
 	cfg := config.Config{
-		Operator:     operator,
-		CentralRepo:  centralRepo,
-		CentralURL:   centralURL,
-		CentralToken: centralToken,
-		LastSync:     "",
+		Operator:      operator,
+		CentralRepo:   centralRepo,
+		CentralURL:    centralURL,
+		CentralToken:  centralToken,
+		CentralCAFile: centralCAFile,
+		LastSync:      "",
 	}
 	if err := cfg.Save(config.ConfigPath()); err != nil {
 		return fmt.Errorf("write config.yaml: %w", err)

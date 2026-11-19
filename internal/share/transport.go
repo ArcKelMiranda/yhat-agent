@@ -8,6 +8,8 @@ package share
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -48,8 +50,13 @@ type TeamPayload struct {
 	Context       string `json:"context,omitempty"`
 	Author        string `json:"author"`
 	CreatedAt     string `json:"created_at"`
-	TeamStatus    string `json:"team_status"` // "approved"
-	TeamUpdatedAt string `json:"team_updated_at"`
+	TeamStatus    string `json:"team_status"`     // "approved"
+	TeamUpdatedAt string `json:"team_updated_at"` // when the team decided
+	// Status and ReviewedAt are the S7 spellings some servers use for the
+	// same information. They are only read as a fallback when the contract
+	// fields above are missing.
+	Status     string `json:"status,omitempty"`
+	ReviewedAt string `json:"reviewed_at,omitempty"`
 }
 
 // RejectedPayload is the JSON shape written to <central_repo>/rejected/<id>.json
@@ -326,7 +333,28 @@ func (ht *HTTPTransport) Pull(ctx context.Context, cursor string) (PullResult, e
 		return PullResult{}, fmt.Errorf("decode /api/team response: %w", err)
 	}
 
+	for i := range memories {
+		memories[i].normalizeTeamFields()
+	}
+
 	return PullResult{Memories: memories, NextCursor: ""}, nil
+}
+
+// normalizeTeamFields fills the contract fields when the server only sent the
+// S7 spelling. A server that sends neither leaves TeamStatus empty, and the
+// caller skips that memory instead of failing the whole pull.
+func (tp *TeamPayload) normalizeTeamFields() {
+	if tp.TeamStatus == "" {
+		switch tp.Status {
+		case "approved":
+			tp.TeamStatus = "approved"
+		case "retired":
+			tp.TeamStatus = "retired"
+		}
+	}
+	if tp.TeamUpdatedAt == "" {
+		tp.TeamUpdatedAt = tp.ReviewedAt
+	}
 }
 
 // ApplyRejection is a F2 stub: it logs a Spanish no-op line and returns nil.
@@ -355,11 +383,51 @@ func (ht *HTTPTransport) Token() string { return ht.token }
 // using the provided http.Client (default 15s timeout) and token.
 // Otherwise it returns LocalDirTransport rooted at url.
 func NewTransport(url string, token string) (Transport, error) {
+	return NewTransportWithCA(url, token, "")
+}
+
+// NewTransportWithCA is NewTransport with an extra CA bundle for HTTPS
+// servers whose certificate is signed by a private authority (for example a
+// self-signed central server). The certificates in caFile are added to the
+// system trust store; TLS verification is never disabled.
+// When caFile is empty the system trust store is used as-is.
+func NewTransportWithCA(url string, token string, caFile string) (Transport, error) {
 	if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
-		client := &http.Client{Timeout: 15 * time.Second}
+		client, err := newHTTPClient(caFile)
+		if err != nil {
+			return nil, err
+		}
 		return NewHTTPTransport(client, url, token)
 	}
 	return NewLocalDirTransport(url)
+}
+
+// newHTTPClient builds the HTTP client used by HTTPTransport.
+//
+// When caFile is empty the client uses the default transport and therefore the
+// system trust store. When caFile is set, its PEM certificates are appended to
+// the system trust store, so a self-signed central server verifies normally.
+func newHTTPClient(caFile string) (*http.Client, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+	if caFile == "" {
+		return client, nil
+	}
+
+	pem, err := os.ReadFile(caFile)
+	if err != nil {
+		return nil, fmt.Errorf("read CA file %s: %w", caFile, err)
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
+	if !pool.AppendCertsFromPEM(pem) {
+		return nil, fmt.Errorf("no certificates found in CA file %s", caFile)
+	}
+	client.Transport = &http.Transport{
+		TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
+	}
+	return client, nil
 }
 
 // ---------------------------------------------------------------------------

@@ -14,3 +14,4 @@ yhat-agent_windows_*
 
 # Local code-graph index
 .codegraph/
+__pycache__/

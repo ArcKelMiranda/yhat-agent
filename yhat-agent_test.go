@@ -3065,8 +3065,10 @@ func TestExclusiveFileWriter_AtomicWriteBehavior(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to stat file: %v", err)
 	}
-	if info.Mode()&0777 != 0644 {
-		t.Errorf("expected permissions 0644, got %o", info.Mode())
+	// The process umask may only remove bits from the requested mode, so the
+	// result must never exceed 0644 (it is 0600 under umask 077).
+	if info.Mode().Perm()&^0644 != 0 {
+		t.Errorf("permissions exceed requested 0644, got %o", info.Mode().Perm())
 	}
 
 	// Verify no orphan temp files remain in the directory (O_EXCL creates directly)

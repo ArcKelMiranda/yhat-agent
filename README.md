@@ -25,6 +25,47 @@ yhat-agent bandeja [--idle 10m]   # Open the approval inbox; closes after --idle
 yhat-agent uninstall --yes   # Remove managed files (requires confirmation)
 ```
 
+### Central repository (Yhat-YK)
+
+`sync` talks to the central repository over HTTP(S). The endpoint is configured in
+`~/.yhat/config.yaml`:
+
+| Field | Meaning |
+|---|---|
+| `central_url` | Base URL of the central service, e.g. `https://yk-central:8100`. `http://` and `https://` select the HTTP transport; any other value is treated as a local directory (legacy `central_repo`). |
+| `central_token` | Bearer token sent on every request. In Yhat-YK the token comes from `python -m central.cli issue` and only its SHA-256 is stored server-side. |
+| `central_ca_file` | Optional PEM bundle with extra CAs to trust. Needed when the central server uses a private (self-signed) authority: the certificates are added to the system trust store, TLS verification is never disabled. |
+| `central_repo` | Legacy local-directory transport. Leave empty when `central_url` is set. |
+
+`yhat-agent install` writes `central_url`, `central_token` and `central_ca_file` from the
+environment variables `YHAT_CENTRAL_URL`, `YHAT_CENTRAL_TOKEN` and `YHAT_CENTRAL_CA_FILE`.
+
+```bash
+# One-off override for a single run
+yhat-agent sync --central-url=https://yk-central:8100 --central-ca=~/.yhat/tls/ca.crt
+```
+
+The wire contract lives in [`docs/central-api.md`](docs/central-api.md). `GET /api/team` must
+answer a **flat JSON array**; the agent does not read the `{"memories": [...]}` wrapped form.
+
+### Validar el canal
+
+`scripts/smoke-central.sh` comprueba el canal completo contra el servicio real
+de Yhat-YK: TLS, token, propuesta, aprobación en la bandeja, push por HTTPS,
+aprobación en YK, pull de vuelta al store local y ausencia de duplicados en un
+segundo `sync`. Sale con código 1 si algún check falla.
+
+```bash
+# Con el token de reviewer: valida también el pull y limpia la memoria de prueba
+YHAT_REVIEWER_TOKEN=<token-reviewer> scripts/smoke-central.sh
+
+# Sin token de reviewer: valida todo menos la aprobación en YK (el pull se omite)
+scripts/smoke-central.sh
+```
+
+Usa `scripts/mcp_call.py` para hablar con el MCP del agente (`propose_memory`,
+`share_memory`, …) sin cliente gráfico.
+
 ### Claude Code
 
 `yhat-agent install` also sets up [Claude Code](https://claude.com/claude-code) when `~/.claude`
